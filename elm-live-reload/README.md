@@ -1,6 +1,5 @@
 # Elm Live Reload
 
 ```
-cd example
-deno ../index.ts src/Main.elm src/index.html --allow-net --allow-run
+deno https://denopkg.com/jinjor/deno-playground/elm-live-reload/index.ts src/Main.elm src/index.html --allow-net --allow-run
 ```

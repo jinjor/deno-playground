@@ -1,5 +1,5 @@
 # deno-playground
 
 ```
-deno https://raw.githubusercontent.com/jinjor/deno-playground/master/hello.ts
+deno https://denopkg.com/jinjor/deno-playground/hello.ts
 ```
