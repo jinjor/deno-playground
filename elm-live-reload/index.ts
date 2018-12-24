@@ -1,7 +1,14 @@
 import { args, run, stat, readFile, exit } from "deno";
 import { parse } from "https://deno.land/x/flags/index.ts";
 import { serve } from "https://deno.land/x/net/http.ts";
-import { intercept, route, get, html, empty, file } from "./middleware.ts";
+import {
+  intercept,
+  route,
+  get,
+  html,
+  empty,
+  file
+} from "../expressive/index.ts";
 
 const parsedArgs = parse(args);
 const mainFile = parsedArgs._[1];
