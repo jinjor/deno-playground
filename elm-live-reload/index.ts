@@ -1,5 +1,5 @@
 import { args, run, stat, readFile, exit } from "deno";
-import { flags, http, expressive } from "./package.ts";
+import { flags, http, expressive, opn } from "./package.ts";
 
 const parsedArgs = flags.parse(args);
 const mainFile = parsedArgs._[1];
@@ -67,6 +67,7 @@ async function main(main: string, index: string, port: number) {
     );
     const s = serve_("127.0.0.1:" + port);
     console.log("server listening on " + port + ".");
+    opn("http://localhost:" + port);
   })();
   while (true) {
     lastModified = await watch(main, lastModified);
