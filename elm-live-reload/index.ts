@@ -1,14 +1,7 @@
 import { args, run, stat, readFile, exit } from "deno";
 import { parse } from "https://deno.land/x/flags/index.ts";
 import { serve } from "https://deno.land/x/net/http.ts";
-import {
-  intercept,
-  route,
-  get,
-  html,
-  empty,
-  file
-} from "../expressive/index.ts";
+import * as expressive from "../expressive/index.ts";
 
 const parsedArgs = parse(args);
 const mainFile = parsedArgs._[1];
@@ -27,7 +20,7 @@ function showUsage() {
   console.log();
   console.log(
     `Usage:
-    deno ./start.ts src/Main.elm src/index.html --allow-net --allow-run`
+    deno path/to/elm-live-reload.ts src/Main.elm src/index.html --allow-net --allow-run`
   );
   console.log();
 }
@@ -38,40 +31,42 @@ async function main(main: string, index: string, port: number) {
   let lastModified = null;
   let shouldRefresh = false;
   (async () => {
-    const serve_ = intercept(
+    const serve_ = expressive.intercept(
       serve,
       [
         function requestLogger(req) {
           // console.log(req.method, req.url);
         },
-        route([
-          get("/", async req => {
+        expressive.static_("./public"),
+        expressive.static_("./dist"),
+        expressive.route([
+          expressive.get("/", async req => {
             const data = await readFile(index);
             const decoder = new TextDecoder();
             const html_ = decoder
               .decode(data)
               .replace("</head>", `<script>${reloader}</script></head>`);
-            await html(req, html_);
+            await expressive.html(req, html_);
           }),
-          get("/elm.js", async req => {
-            await file(req, "dist/elm.js", "application/json");
+          expressive.get("/elm.js", async req => {
+            await expressive.file(req, "dist/elm.js", "application/json");
           }),
-          get("/live", async req => {
+          expressive.get("/live", async req => {
             if (shouldRefresh) {
               shouldRefresh = false;
-              await empty(req, 205);
+              await expressive.empty(req, 205);
             } else {
-              await empty(req, 200);
+              await expressive.empty(req, 200);
             }
           })
         ])
       ],
       {
         "404": async req => {
-          await empty(req, 404);
+          await expressive.empty(req, 404);
         },
         "500": async req => {
-          await empty(req, 500);
+          await expressive.empty(req, 500);
         }
       }
     );
@@ -118,7 +113,7 @@ const reloader = `
   errorCount = 0;
   function live() {
     fetch("/live").then(res => {
-      console.log(res.status);
+      // console.log(res.status);
       if (res.status === 205) {
         errorCount = 0;
         location.reload();

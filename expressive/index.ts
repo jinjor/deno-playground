@@ -1,4 +1,6 @@
 import { readFile } from "deno";
+import { getType } from "mime";
+import * as path from "https://deno.land/x/path/index.ts";
 
 type Middleware = any;
 export interface PathHandler {
@@ -23,41 +25,54 @@ export function intercept(
           }
         }
       } catch (e) {
+        console.log(e);
         flag = "500";
       }
       if (flag) {
         const f = special[flag];
         if (f) {
           f(req);
-        } else {
-          throw new Error(`handler [${flag}] not defined`);
         }
       }
     }
+  };
+}
+export function static_(dir: string): Middleware {
+  return async req => {
+    const extname = path.extname(req.url);
+    const contentType = getType(extname.slice(1));
+    try {
+      await file(req, path.join(dir, req.url.slice(1)), contentType);
+      return "done";
+    } catch (_) {}
   };
 }
 export function route(paths: PathHandler[]): Middleware {
   return async req => {
     for (let p of paths) {
       if (p.match(req)) {
-        return await p.handle(req);
+        await p.handle(req);
+        return "done";
       }
     }
     return "404";
   };
 }
-function method(method_, head, f): PathHandler {
+function method(method_, head, handle): PathHandler {
   return {
     match(req) {
       return req.method == method_ && req.url === head;
     },
     handle(req) {
-      return f(req);
+      return handle(req);
     }
   };
 }
 export function get(head, f): PathHandler {
   return method("GET", head, f);
+}
+export function post(head, f): PathHandler {
+  return method("POST", head, f);
 }
 export function html(req, html: string) {
   const body = new TextEncoder().encode(html);
@@ -74,10 +89,7 @@ export function empty(req, status: number) {
   req.respond({ status, headers, body });
 }
 export async function file(req, filename, contentType) {
-  const data = await readFile(filename);
-  const decoder = new TextDecoder();
-  const js = decoder.decode(data);
-  const body = new TextEncoder().encode(js);
+  const body = await readFile(filename);
   const headers = new Headers();
   headers.append("Content-Type", contentType);
   headers.append("Content-Length", body.byteLength.toString());
