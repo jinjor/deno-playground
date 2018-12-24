@@ -15,8 +15,15 @@ export function intercept(
     const s = serve_.apply(null, args);
     for await (const req of s) {
       let flag = null;
-      for (let m of middlewares) {
-        flag = await m(req);
+      try {
+        for (let m of middlewares) {
+          flag = await m(req);
+          if (flag) {
+            break;
+          }
+        }
+      } catch (e) {
+        flag = "500";
       }
       if (flag) {
         const f = special[flag];
@@ -36,6 +43,7 @@ export function route(paths: PathHandler[]): Middleware {
         return await p.handle(req);
       }
     }
+    return "404";
   };
 }
 function method(method_, head, f): PathHandler {
