@@ -5,7 +5,7 @@ import { path } from "./package.ts";
 type Middleware = (req: any) => Promise<string | void>;
 export interface PathHandler {
   match(req: any): boolean;
-  handle(req: any): Promise<void>;
+  handle(req: any): Promise<string | void>;
 }
 
 export function intercept(
@@ -24,6 +24,7 @@ export function intercept(
             break;
           }
         }
+        flag = flag || "404";
       } catch (e) {
         console.log(e);
         flag = "500";
@@ -69,11 +70,10 @@ export function route(paths: PathHandler[]): Middleware {
   return async req => {
     for (let p of paths) {
       if (p.match(req)) {
-        await p.handle(req);
-        return "done";
+        const flag = await p.handle(req);
+        return flag || "done";
       }
     }
-    return "404";
   };
 }
 function method(
