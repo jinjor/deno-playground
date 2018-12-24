@@ -15,6 +15,7 @@ export function intercept(
 ) {
   return async function serve(...args) {
     const s = serve_.apply(null, args);
+    const context: any = {};
     for await (const req of s) {
       let flag = null;
       try {
@@ -26,13 +27,17 @@ export function intercept(
         }
         flag = flag || "404";
       } catch (e) {
-        console.log(e);
-        flag = "500";
+        context.error = e;
+        if (e instanceof DenoError && e.kind === ErrorKind.NotFound) {
+          flag = "404";
+        } else {
+          flag = "500";
+        }
       }
       if (flag) {
         const f = special[flag];
         if (f) {
-          f(req);
+          f(req, context);
         }
       }
     }

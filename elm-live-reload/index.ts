@@ -61,12 +61,13 @@ async function main(main: string, index: string, port: number) {
         "404": async req => {
           await expressive.empty(req, 404);
         },
-        "500": async req => {
+        "500": async (req, { error }) => {
+          error && console.log(error);
           await expressive.empty(req, 500);
         }
       }
     );
-    const s = serve_("127.0.0.1:" + port);
+    serve_("127.0.0.1:" + port);
     console.log("server listening on " + port + ".");
     opn("http://localhost:" + port);
   })();
