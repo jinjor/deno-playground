@@ -27,7 +27,6 @@ function showUsage() {
 main(mainFile, indexHtml, port);
 
 async function main(main: string, index: string, port: number) {
-  let lastModified = null;
   let shouldRefresh = false;
   (async () => {
     const serve_ = expressive.intercept(
@@ -71,6 +70,7 @@ async function main(main: string, index: string, port: number) {
     console.log("server listening on " + port + ".");
     opn("http://localhost:" + port);
   })();
+  let lastModified = null;
   while (true) {
     lastModified = await watch(main, lastModified);
     const code = await compile(main);
@@ -80,9 +80,9 @@ async function main(main: string, index: string, port: number) {
   }
 }
 
-async function watch(main: string, lastModified: number): Promise<number> {
+async function watch(file: string, lastModified: number): Promise<number> {
   while (true) {
-    const fileInfo = await stat(main);
+    const fileInfo = await stat(file);
     if (!lastModified && fileInfo) {
       return fileInfo.modified;
     }
