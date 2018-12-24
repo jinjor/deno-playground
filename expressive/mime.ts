@@ -1,4 +1,4 @@
-import mimes = require("https://raw.githubusercontent.com/jshttp/mime-db/master/db.json");
+import { mimes } from "./package.ts";
 
 const dict = {};
 for (let t in mimes) {

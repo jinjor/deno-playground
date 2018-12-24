@@ -1,9 +1,7 @@
 import { args, run, stat, readFile, exit } from "deno";
-import { parse } from "https://deno.land/x/flags/index.ts";
-import { serve } from "https://deno.land/x/net/http.ts";
-import * as expressive from "../expressive/index.ts";
+import { flags, http, expressive } from "./package.ts";
 
-const parsedArgs = parse(args);
+const parsedArgs = flags.parse(args);
 const mainFile = parsedArgs._[1];
 const indexHtml = parsedArgs._[2];
 const port = parsedArgs.p || parsedArgs.port || 3000;
@@ -32,7 +30,7 @@ async function main(main: string, index: string, port: number) {
   let shouldRefresh = false;
   (async () => {
     const serve_ = expressive.intercept(
-      serve,
+      http.serve,
       [
         function requestLogger(req) {
           // console.log(req.method, req.url);

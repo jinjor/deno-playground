@@ -1,6 +1,6 @@
 import { readFile } from "deno";
 import { getType } from "mime";
-import * as path from "https://deno.land/x/path/index.ts";
+import { path } from "./package.ts";
 
 type Middleware = any;
 export interface PathHandler {
