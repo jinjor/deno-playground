@@ -1,6 +1,7 @@
 import { args, run, stat, readFile, exit } from "deno";
 import { parse } from "https://deno.land/x/flags/index.ts";
 import { serve } from "https://deno.land/x/net/http.ts";
+import { intercept, route, get, html, empty, file } from "./middleware.ts";
 
 const parsedArgs = parse(args);
 const mainFile = parsedArgs._[1];
@@ -30,55 +31,45 @@ async function main(main: string, index: string, port: number) {
   let lastModified = null;
   let shouldRefresh = false;
   (async () => {
-    const s = serve("127.0.0.1:" + port);
-    console.log("server listening on " + port + ".");
-    for await (const req of s) {
-      // Note: turn on to show all accesses.
-      // console.log(req.method, req.url);
-      if (req.url === "/") {
-        const data = await readFile(index);
-        const decoder = new TextDecoder();
-        const html = decoder
-          .decode(data)
-          .replace("</head>", `<script>${reloader}</script></head>`);
-        const body = new TextEncoder().encode(html);
-        const headers = new Headers();
-        headers.append("Content-Type", "text/html");
-        headers.append("Content-Length", body.byteLength.toString());
-        req.respond({
-          status: 200,
-          headers: headers,
-          body: body
-        });
-      } else if (req.url === "/elm.js") {
-        const data = await readFile("dist/elm.js");
-        const decoder = new TextDecoder();
-        const js = decoder.decode(data);
-        const body = new TextEncoder().encode(js);
-        const headers = new Headers();
-        headers.append("Content-Type", "text/javascript");
-        headers.append("Content-Length", body.byteLength.toString());
-        req.respond({ status: 200, headers, body });
-      } else if (req.url === "/live") {
-        const body = new TextEncoder().encode("");
-        const headers = new Headers();
-        headers.append("Content-Type", "text/plain");
-        headers.append("Content-Length", "0");
-        if (shouldRefresh) {
-          shouldRefresh = false;
-          req.respond({ status: 205, headers, body });
-        } else {
-          req.respond({ status: 200, headers, body });
+    const serve_ = intercept(
+      serve,
+      [
+        function requestLogger(req) {
+          // console.log(req.method, req.url);
+        },
+        route([
+          get("/", async req => {
+            const data = await readFile(index);
+            const decoder = new TextDecoder();
+            const html_ = decoder
+              .decode(data)
+              .replace("</head>", `<script>${reloader}</script></head>`);
+            await html(req, html_);
+          }),
+          get("/elm.js", async req => {
+            await file(req, "dist/elm.js", "application/json");
+          }),
+          get("/live", async req => {
+            if (shouldRefresh) {
+              shouldRefresh = false;
+              await empty(req, 205);
+            } else {
+              await empty(req, 200);
+            }
+          })
+        ])
+      ],
+      {
+        "404": async req => {
+          await empty(req, 404);
+        },
+        "500": async req => {
+          await empty(req, 500);
         }
-      } else {
-        const body = new TextEncoder().encode("");
-        const headers = new Headers();
-        headers.append("Content-Type", "text/plain");
-        headers.append("Content-Length", "0");
-        req.respond({ status: 404, headers, body });
       }
-      // Note: Content-Length is necessary to avoid connection leak.
-    }
+    );
+    const s = serve_("127.0.0.1:" + port);
+    console.log("server listening on " + port + ".");
   })();
   while (true) {
     lastModified = await watch(main, lastModified);
