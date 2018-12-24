@@ -1,11 +1,12 @@
 import { args, run, stat, readFile, exit } from "deno";
-import { flags, http, expressive, opn } from "./package.ts";
+import { flags, http, expressive, path, opn } from "./package.ts";
 
 const parsedArgs = flags.parse(args);
 const mainFile = parsedArgs._[1];
 const indexHtml = parsedArgs._[2];
 const port = parsedArgs.p || parsedArgs.port || 3000;
 const help = parsedArgs.h || parsedArgs.help;
+const distDir = "./elm-stuff/elm-live-reload";
 if (help) {
   showUsage();
   exit(0);
@@ -36,7 +37,7 @@ async function main(main: string, index: string, port: number) {
           // console.log(req.method, req.url);
         },
         expressive.static_("./public"),
-        expressive.static_("./dist"),
+        expressive.static_(distDir),
         expressive.route([
           expressive.get("/", async req => {
             const data = await readFile(index);
@@ -96,7 +97,7 @@ async function watch(main: string, lastModified: number): Promise<number> {
 function compile(main: string): Promise<number> {
   return new Promise(async resolve => {
     const process = run({
-      args: ["elm", "make", main, "--output", "dist/elm.js"],
+      args: ["elm", "make", main, "--output", path.join(distDir, "elm.js")],
       stdout: "inherit",
       stderr: "inherit"
     });
