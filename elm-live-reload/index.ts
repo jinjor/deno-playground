@@ -32,7 +32,7 @@ async function main(main: string, index: string, port: number) {
     const serve_ = expressive.intercept(
       http.serve,
       [
-        function requestLogger(req) {
+        async function requestLogger(req) {
           // console.log(req.method, req.url);
         },
         expressive.static_("./public"),
@@ -45,9 +45,6 @@ async function main(main: string, index: string, port: number) {
               .decode(data)
               .replace("</head>", `<script>${reloader}</script></head>`);
             await expressive.html(req, html_);
-          }),
-          expressive.get("/elm.js", async req => {
-            await expressive.file(req, "dist/elm.js", "application/json");
           }),
           expressive.get("/live", async req => {
             if (shouldRefresh) {

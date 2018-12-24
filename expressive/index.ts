@@ -1,11 +1,11 @@
-import { readFile } from "deno";
+import { stat, readFile, DenoError, ErrorKind } from "deno";
 import { getType } from "mime";
 import { path } from "./package.ts";
 
-type Middleware = any;
+type Middleware = (req: any) => Promise<string | void>;
 export interface PathHandler {
   match(req: any): boolean;
-  handle(req: any): string;
+  handle(req: any): Promise<void>;
 }
 
 export function intercept(
@@ -41,10 +41,28 @@ export function static_(dir: string): Middleware {
   return async req => {
     const extname = path.extname(req.url);
     const contentType = getType(extname.slice(1));
-    try {
-      await file(req, path.join(dir, req.url.slice(1)), contentType);
-      return "done";
-    } catch (_) {}
+    const filePath = path.join(dir, req.url.slice(1));
+    const body = await stat(filePath)
+      .then(fileInfo => {
+        if (!fileInfo.isFile()) {
+          return null;
+        }
+        return readFile(filePath);
+      })
+      .catch(e => {
+        if (e instanceof DenoError && e.kind === ErrorKind.NotFound) {
+          return null;
+        }
+        throw e;
+      });
+    if (!body) {
+      return;
+    }
+    const headers = new Headers();
+    headers.append("Content-Type", contentType);
+    headers.append("Content-Length", body.byteLength.toString());
+    await req.respond({ status: 200, headers, body });
+    return "done";
   };
 }
 export function route(paths: PathHandler[]): Middleware {
@@ -58,7 +76,11 @@ export function route(paths: PathHandler[]): Middleware {
     return "404";
   };
 }
-function method(method_, head, handle): PathHandler {
+function method(
+  method_,
+  head,
+  handle: (req: any) => Promise<void>
+): PathHandler {
   return {
     match(req) {
       return req.method == method_ && req.url === head;
@@ -68,30 +90,30 @@ function method(method_, head, handle): PathHandler {
     }
   };
 }
-export function get(head, f): PathHandler {
-  return method("GET", head, f);
+export function get(head, handle: (req: any) => Promise<void>): PathHandler {
+  return method("GET", head, handle);
 }
-export function post(head, f): PathHandler {
-  return method("POST", head, f);
+export function post(head, handle: (req: any) => Promise<void>): PathHandler {
+  return method("POST", head, handle);
 }
-export function html(req, html: string) {
+export async function html(req, html: string) {
   const body = new TextEncoder().encode(html);
   const headers = new Headers();
   headers.append("Content-Type", "text/html");
   headers.append("Content-Length", body.byteLength.toString());
-  req.respond({ status: 200, headers, body });
+  await req.respond({ status: 200, headers, body });
 }
-export function empty(req, status: number) {
+export async function empty(req, status: number) {
   const body = new TextEncoder().encode("");
   const headers = new Headers();
   headers.append("Content-Type", "text/plain");
   headers.append("Content-Length", "0");
-  req.respond({ status, headers, body });
+  await req.respond({ status, headers, body });
 }
-export async function file(req, filename, contentType) {
-  const body = await readFile(filename);
+export async function file(req, filePath, contentType) {
+  const body = await readFile(filePath);
   const headers = new Headers();
   headers.append("Content-Type", contentType);
   headers.append("Content-Length", body.byteLength.toString());
-  req.respond({ status: 200, headers, body });
+  await req.respond({ status: 200, headers, body });
 }
