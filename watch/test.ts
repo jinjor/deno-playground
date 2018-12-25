@@ -1,5 +1,5 @@
 import { writeFile, env, exit, mkdir, remove } from "deno";
-import { one, stream, all } from "../index.ts";
+import { all } from "./index.ts";
 import * as path from "https://deno.land/x/path/index.ts";
 
 function assert(cond, message) {
