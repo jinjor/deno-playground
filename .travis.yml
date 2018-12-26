@@ -1,3 +1,5 @@
+language: minimal
+
 os:
   - osx
   - linux
