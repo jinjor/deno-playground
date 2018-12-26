@@ -9,7 +9,7 @@ function it(name, fn) {
 function randomFileName() {
   return Math.floor(Math.random() * 100000) + "txt";
 }
-let tmpDir = env().TMPDIR || env().TEMP;
+let tmpDir = env().TMPDIR || env().TEMP || env().TMP || "/tmp";
 if (!tmpDir) {
   console.error("tmp dir not found");
   exit(1);
