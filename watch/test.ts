@@ -3,16 +3,13 @@ import watch from "index.ts";
 import * as path from "https://deno.land/x/path/index.ts";
 import { test, assertEqual } from "https://deno.land/x/testing/testing.ts";
 
-function it(name, fn) {
-  test({ name, fn });
-}
 function randomFileName() {
   return Math.floor(Math.random() * 100000) + "txt";
 }
 let tmpDir = env().TMPDIR || env().TEMP || env().TMP || "/tmp";
 tmpDir = path.join(tmpDir, "watch-test");
 
-it("should detect add, modify, delete", async () => {
+test(async function Watch() {
   await mkdir(tmpDir);
   let result = [];
   const unwatch = await watch(tmpDir, r => {

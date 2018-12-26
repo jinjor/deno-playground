@@ -18,31 +18,33 @@ export async function main(
         },
         expressive.static_("./public"),
         expressive.static_(distDir),
-        expressive.route([
-          expressive.get("/", async req => {
-            const data = await readFile(index);
-            const decoder = new TextDecoder();
-            const html_ = decoder
-              .decode(data)
-              .replace("</head>", `<script>${reloader}</script></head>`);
-            await expressive.html(req, html_);
-          }),
-          expressive.get("/live", async req => {
-            if (shouldRefresh) {
-              shouldRefresh = false;
-              await expressive.empty(req, 205);
-            } else {
-              await expressive.empty(req, 200);
-            }
-          })
-        ])
+        expressive.bodyParser(),
+        expressive.get("/", async req => {
+          const data = await readFile(index);
+          const decoder = new TextDecoder();
+          const html_ = decoder
+            .decode(data)
+            .replace("</head>", `<script>${reloader}</script></head>`);
+          await expressive.html(req, html_);
+        }),
+        expressive.get("/live", async req => {
+          if (shouldRefresh) {
+            shouldRefresh = false;
+            await expressive.empty(req, 205);
+          } else {
+            await expressive.empty(req, 200);
+          }
+        })
       ],
       {
+        "400": async req => {
+          await expressive.empty(req, 400);
+        },
         "404": async req => {
           await expressive.empty(req, 404);
         },
-        "500": async (req, { error }) => {
-          error && console.log(error);
+        "500": async req => {
+          req.error && console.log(req.error);
           await expressive.empty(req, 500);
         }
       }

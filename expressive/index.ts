@@ -2,9 +2,11 @@ import { stat, readFile, DenoError, ErrorKind } from "deno";
 import { getType } from "mime.ts";
 import { path } from "package.ts";
 
-type Middleware = (req: any) => Promise<string | void>;
+type Method = "GET" | "POST";
+type Middleware = ((req: any) => Promise<string | void>) | PathHandler;
 export interface PathHandler {
-  match(req: any): boolean;
+  method: Method;
+  pattern: string;
   handle(req: any): Promise<string | void>;
 }
 
@@ -15,19 +17,15 @@ export function intercept(
 ) {
   return async function serve(...args) {
     const s = serve_.apply(null, args);
-    const context: any = {};
-    for await (const req of s) {
+    for await (const raw of s) {
+      const req = { raw, ...raw };
+      _parseURL(req);
       let flag = null;
       try {
-        for (let m of middlewares) {
-          flag = await m(req);
-          if (flag) {
-            break;
-          }
-        }
+        flag = await runMiddlewares(middlewares, req);
         flag = flag || "404";
       } catch (e) {
-        context.error = e;
+        req.error = e;
         if (e instanceof DenoError && e.kind === ErrorKind.NotFound) {
           flag = "404";
         } else {
@@ -37,11 +35,53 @@ export function intercept(
       if (flag) {
         const f = special[flag];
         if (f) {
-          f(req, context);
+          f(req);
         }
       }
     }
   };
+}
+export function _parseURL(req) {
+  const url = new URL(req.url);
+  req.protocol = url.protocol.slice(0, -1);
+  req.host = url.hostname;
+  req.port = url.port;
+  req.path = url.pathname;
+  const query = {};
+  for (let [k, v] of new URLSearchParams(url.search) as any) {
+    if (Array.isArray(query[k])) {
+      query[k] = [...query[k], v];
+    } else if (typeof query[k] === "string") {
+      query[k] = [query[k], v];
+    } else {
+      query[k] = v;
+    }
+  }
+  req.query = query;
+}
+async function runMiddlewares(
+  ms: Middleware[],
+  req: any
+): Promise<string | void> {
+  for (let m of ms) {
+    const flag = await runMiddleware(m, req);
+    if (flag) {
+      return flag;
+    }
+  }
+}
+async function runMiddleware(m: Middleware, req: any) {
+  if (isPathHandler(m)) {
+    if (m.pattern === req.url) {
+      const flag = await m.handle(req);
+      return flag || "done";
+    }
+  } else {
+    return m(req);
+  }
+}
+function isPathHandler(m: Middleware): m is PathHandler {
+  return typeof m !== "function";
 }
 export function static_(dir: string): Middleware {
   return async req => {
@@ -71,35 +111,29 @@ export function static_(dir: string): Middleware {
     return "done";
   };
 }
-export function route(paths: PathHandler[]): Middleware {
+export function bodyParser(): Middleware {
   return async req => {
-    for (let p of paths) {
-      if (p.match(req)) {
-        const flag = await p.handle(req);
-        return flag || "done";
+    if (req.headers.get("content-type") === "application/json") {
+      try {
+        req.data = JSON.parse(req.body);
+      } catch (e) {
+        req.error = e;
+        return "400";
       }
     }
   };
 }
-function method(
-  method_,
-  head,
-  handle: (req: any) => Promise<void>
+export function get(
+  pattern,
+  handle: (req: any) => Promise<string | void>
 ): PathHandler {
-  return {
-    match(req) {
-      return req.method == method_ && req.url === head;
-    },
-    handle(req) {
-      return handle(req);
-    }
-  };
+  return { method: "GET", pattern, handle };
 }
-export function get(head, handle: (req: any) => Promise<void>): PathHandler {
-  return method("GET", head, handle);
-}
-export function post(head, handle: (req: any) => Promise<void>): PathHandler {
-  return method("POST", head, handle);
+export function post(
+  pattern,
+  handle: (req: any) => Promise<string | void>
+): PathHandler {
+  return { method: "POST", pattern, handle };
 }
 export async function html(req, html: string) {
   const body = new TextEncoder().encode(html);
