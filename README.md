@@ -5,5 +5,5 @@
 My personal playground for deno. Everything is experimental!
 
 ```
-deno https://denopkg.com/jinjor/deno-playground/hello.ts
+deno https://raw.githubusercontent.com/jinjor/deno-playground/master/test.ts --allow-env --allow-write
 ```
