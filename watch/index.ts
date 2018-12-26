@@ -1,53 +1,33 @@
-import { readDir, readlink, stat, lstat, FileInfo } from "deno";
+import { readDir, readlink, lstat } from "deno";
 
 export interface Change {
   action: "ADDED" | "MODIFIED" | "DELETED";
   file: string;
 }
-
+type Mode = "one" | "stream" | "all";
 export interface Options {
   interval?: number;
   followSymlink?: boolean;
   ignoreDotFiles?: boolean;
   log?: Function;
+  mode?: Mode;
 }
 const defaultOptions = {
   interval: 1000,
   followSymlink: false,
   ignoreDotFiles: true,
-  log: null
+  log: null,
+  mode: "all"
 };
-type Mode = "one" | "stream" | "all";
-
-export function one(dir: string, callback, options?: Options) {
-  return watch(
-    dir,
-    callback,
-    Object.assign({}, defaultOptions, options),
-    "one"
-  );
-}
-export function stream(dir: string, callback, options?: Options) {
-  return watch(
-    dir,
-    callback,
-    Object.assign({}, defaultOptions, options),
-    "stream"
-  );
-}
-export function all(dir: string, callback, options?: Options) {
-  return watch(
-    dir,
-    callback,
-    Object.assign({}, defaultOptions, options),
-    "all"
-  );
-}
-
-async function watch(dir: string, callback, options: Options, mode: Mode) {
+export default async function watch(
+  dir: string,
+  callback: (result: string[] | string | void) => void,
+  options?: Options
+) {
+  options = Object.assign({}, defaultOptions, options);
   let abort = false;
   let timeout = null;
-  let files = await detectChanges({}, dir, function() {}, options, mode);
+  let files = await detectChanges({}, dir, function() {}, options);
   (async () => {
     while (true) {
       await new Promise(resolve => {
@@ -57,7 +37,7 @@ async function watch(dir: string, callback, options: Options, mode: Mode) {
         break;
       }
       let start = Date.now();
-      files = await detectChanges(files, dir, callback, options, mode);
+      files = await detectChanges(files, dir, callback, options);
       let end = Date.now();
       options.log &&
         options.log(
@@ -77,8 +57,7 @@ async function detectChanges(
   prev: any,
   dir: string,
   callback,
-  options: Options,
-  mode: Mode
+  { mode, followSymlink, ignoreDotFiles }: Options
 ): Promise<any> {
   const curr = {};
   const changes = [];
@@ -90,14 +69,7 @@ async function detectChanges(
     }
     first = false;
   }
-  await walk(
-    prev,
-    curr,
-    dir,
-    options.followSymlink,
-    options.ignoreDotFiles,
-    push
-  );
+  await walk(prev, curr, dir, followSymlink, ignoreDotFiles, push);
   for (let path in prev) {
     push({
       action: "DELETED",

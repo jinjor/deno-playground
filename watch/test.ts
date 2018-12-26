@@ -1,5 +1,5 @@
 import { writeFile, env, exit, mkdir, remove } from "deno";
-import { all } from "./index.ts";
+import watch from "./index.ts";
 import * as path from "https://deno.land/x/path/index.ts";
 
 function assert(cond, message) {
@@ -51,7 +51,7 @@ function randomFileName() {
 
   await it("should detect add, modify, delete", async () => {
     let result = [];
-    const unwatch = await all(tmpDir, r => {
+    const unwatch = await watch(tmpDir, r => {
       result = result.concat(r);
     });
     try {

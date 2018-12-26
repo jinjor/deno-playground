@@ -1,0 +1,9 @@
+os:
+  - osx
+  - linux
+
+install:
+  - curl -L https://deno.land/x/install/install.py | python
+
+script:
+  - deno test --allow-env --allow-write

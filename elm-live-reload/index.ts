@@ -1,33 +1,13 @@
-import { args, run, stat, readFile, exit } from "deno";
-import { flags, http, expressive, path, opn, watch } from "./package.ts";
+import { run, readFile } from "deno";
+import { http, expressive, path, opn, watch } from "./package.ts";
 
-const parsedArgs = flags.parse(args);
-const mainFile = parsedArgs._[1];
-const indexHtml = parsedArgs._[2];
-const port = parsedArgs.p || parsedArgs.port || 3000;
-const help = parsedArgs.h || parsedArgs.help;
-const distDir = "./elm-stuff/elm-live-reload";
-const watchDir = "./src";
-if (help) {
-  showUsage();
-  exit(0);
-}
-if (!mainFile || !indexHtml) {
-  showUsage();
-  exit(1);
-}
-function showUsage() {
-  console.log();
-  console.log(
-    `Usage:
-    deno path/to/elm-live-reload.ts src/Main.elm src/index.html --allow-net --allow-run`
-  );
-  console.log();
-}
-
-main(mainFile, indexHtml, port);
-
-async function main(main: string, index: string, port: number) {
+export async function main(
+  main: string,
+  index: string,
+  distDir: string,
+  watchDir: string,
+  port: number
+) {
   let shouldRefresh = false;
   (async () => {
     const serve_ = expressive.intercept(
@@ -71,10 +51,10 @@ async function main(main: string, index: string, port: number) {
     console.log("server listening on " + port + ".");
     opn("http://localhost:" + port);
   })();
-  watch.one(
+  watch(
     watchDir,
     async () => {
-      const code = await compile(main);
+      const code = await compile(main, distDir);
       if (code === 0) {
         shouldRefresh = true;
       }
@@ -85,7 +65,7 @@ async function main(main: string, index: string, port: number) {
   );
 }
 
-function compile(main: string): Promise<number> {
+function compile(main: string, distDir: string): Promise<number> {
   return new Promise(async resolve => {
     const process = run({
       args: ["elm", "make", main, "--output", path.join(distDir, "elm.js")],
