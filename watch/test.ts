@@ -7,18 +7,35 @@ function assert(cond, message) {
     throw new Error(message);
   }
 }
-const results = [];
-async function it(statement, f) {
-  let ok = true;
-  let err = null;
-  try {
-    await f();
-  } catch (e) {
-    ok = false;
-    err = e;
+const testCases = [];
+function it(statement, func) {
+  testCases.push({ statement, func });
+}
+async function run() {
+  const results = [];
+  for (let { statement, func } of testCases) {
+    let ok = true;
+    let err = null;
+    try {
+      await func();
+    } catch (e) {
+      ok = false;
+      err = e;
+    }
+    err && console.log(err);
+    results.push({
+      statement,
+      ok
+    });
   }
-  err && console.log(err);
-  results.push(`${ok ? "✅" : "❌"} ${statement}`);
+  let failures = 0;
+  for (let r of results) {
+    if (!r.ok) {
+      failures++;
+    }
+    console.log(`${r.ok ? "✅" : "❌"} ${r.statement}`);
+  }
+  exit(failures);
 }
 function randomFileName() {
   return Math.floor(Math.random() * 100000) + "txt";
@@ -52,7 +69,5 @@ function randomFileName() {
       unwatch();
     }
   });
-  for (let r of results) {
-    console.log(r);
-  }
+  run();
 })();
