@@ -11,4 +11,5 @@ install:
   - curl -L https://deno.land/x/install/install.py | python
 
 script:
+  - deno -v
   - deno test.ts --allow-env --allow-write
