@@ -1,5 +1,5 @@
 import { args, run, stat, readFile, exit } from "deno";
-import { flags, http, expressive, path, opn } from "./package.ts";
+import { flags, http, expressive, path, opn, watch } from "./package.ts";
 
 const parsedArgs = flags.parse(args);
 const mainFile = parsedArgs._[1];
@@ -7,6 +7,7 @@ const indexHtml = parsedArgs._[2];
 const port = parsedArgs.p || parsedArgs.port || 3000;
 const help = parsedArgs.h || parsedArgs.help;
 const distDir = "./elm-stuff/elm-live-reload";
+const watchDir = "./src";
 if (help) {
   showUsage();
   exit(0);
@@ -70,29 +71,18 @@ async function main(main: string, index: string, port: number) {
     console.log("server listening on " + port + ".");
     opn("http://localhost:" + port);
   })();
-  let lastModified = null;
-  while (true) {
-    lastModified = await watch(main, lastModified);
-    const code = await compile(main);
-    if (code === 0) {
-      shouldRefresh = true;
+  watch.one(
+    watchDir,
+    async () => {
+      const code = await compile(main);
+      if (code === 0) {
+        shouldRefresh = true;
+      }
+    },
+    {
+      interval: 500
     }
-  }
-}
-
-async function watch(file: string, lastModified: number): Promise<number> {
-  while (true) {
-    const fileInfo = await stat(file);
-    if (!lastModified && fileInfo) {
-      return fileInfo.modified;
-    }
-    if (lastModified && lastModified < fileInfo.modified) {
-      return fileInfo.modified;
-    }
-    await new Promise(resolve => {
-      setTimeout(resolve, 500);
-    });
-  }
+  );
 }
 
 function compile(main: string): Promise<number> {

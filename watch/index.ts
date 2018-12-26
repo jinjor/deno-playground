@@ -6,9 +6,9 @@ export interface Change {
 }
 
 export interface Options {
-  interval: number;
-  followSymlink: boolean;
-  ignoreDotFiles: boolean;
+  interval?: number;
+  followSymlink?: boolean;
+  ignoreDotFiles?: boolean;
   log?: Function;
 }
 const defaultOptions = {
@@ -20,13 +20,28 @@ const defaultOptions = {
 type Mode = "one" | "stream" | "all";
 
 export function one(dir: string, callback, options?: Options) {
-  return watch(dir, callback, options || defaultOptions, "one");
+  return watch(
+    dir,
+    callback,
+    Object.assign({}, defaultOptions, options),
+    "one"
+  );
 }
 export function stream(dir: string, callback, options?: Options) {
-  return watch(dir, callback, options || defaultOptions, "stream");
+  return watch(
+    dir,
+    callback,
+    Object.assign({}, defaultOptions, options),
+    "stream"
+  );
 }
 export function all(dir: string, callback, options?: Options) {
-  return watch(dir, callback, options || defaultOptions, "all");
+  return watch(
+    dir,
+    callback,
+    Object.assign({}, defaultOptions, options),
+    "all"
+  );
 }
 
 async function watch(dir: string, callback, options: Options, mode: Mode) {
