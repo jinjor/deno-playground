@@ -1,12 +1,8 @@
 import { writeFile, env, exit, mkdir, remove } from "deno";
 import watch from "./index.ts";
 import * as path from "https://deno.land/x/path/index.ts";
+import { assertEqual } from "https://deno.land/x/testing/testing.ts";
 
-function assert(cond, message) {
-  if (!cond) {
-    throw new Error(message);
-  }
-}
 const testCases = [];
 function it(statement, func) {
   testCases.push({ statement, func });
@@ -58,13 +54,13 @@ function randomFileName() {
       const filePath = path.join(tmpDir, randomFileName());
       await writeFile(filePath, new Uint8Array(0));
       await new Promise(resolve => setTimeout(resolve, 1200));
-      assert(result.length === 1, `expected 1 but got ${result.length}`);
+      assertEqual(1, result.length);
       await writeFile(filePath, new Uint8Array(0));
       await new Promise(resolve => setTimeout(resolve, 1200));
-      assert(result.length === 2, `expected 2 but got ${result.length}`);
+      assertEqual(2, result.length);
       await remove(filePath);
       await new Promise(resolve => setTimeout(resolve, 1200));
-      assert(result.length === 3, `expected 3 but got ${result.length}`);
+      assertEqual(3, result.length);
     } finally {
       unwatch();
     }
