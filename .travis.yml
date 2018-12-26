@@ -9,4 +9,4 @@ install:
   - curl -L https://deno.land/x/install/install.py | python
 
 script:
-  - deno test --allow-env --allow-write
+  - deno test.ts --allow-env --allow-write
