@@ -1,6 +1,6 @@
 import { stat, readFile, DenoError, ErrorKind } from "deno";
-import { getType } from "mime";
-import { path } from "./package.ts";
+import { getType } from "mime.ts";
+import { path } from "package.ts";
 
 type Middleware = (req: any) => Promise<string | void>;
 export interface PathHandler {

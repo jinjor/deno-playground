@@ -1,6 +1,6 @@
 import { args, run, exit } from "deno";
-import { flags } from "./package.ts";
-import { main } from "./index.ts";
+import { flags } from "package.ts";
+import { main } from "index.ts";
 
 const parsedArgs = flags.parse(args);
 const mainFile = parsedArgs._[1];

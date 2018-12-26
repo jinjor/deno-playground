@@ -1,5 +1,5 @@
 import { run, readFile } from "deno";
-import { http, expressive, path, opn, watch } from "./package.ts";
+import { http, expressive, path, opn, watch } from "package.ts";
 
 export async function main(
   main: string,

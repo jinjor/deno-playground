@@ -1,4 +1,4 @@
-import { mimes } from "./package.ts";
+import { mimes } from "package.ts";
 
 const dict = {};
 for (let t in mimes) {
