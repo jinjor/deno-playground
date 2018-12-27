@@ -127,8 +127,39 @@ class Response {
     this.body(body);
     await this.end();
   }
-  async file(filePath, transform) {
-    return handleFile(filePath, this.req, this, transform);
+  async file(filePath: string, transform?: Function) {
+    const notModified = false;
+    if (notModified) {
+      return this.empty(304);
+    }
+    const extname = path.extname(filePath);
+    const contentType = getType(extname.slice(1));
+    let body = await stat(filePath)
+      .then(fileInfo => {
+        if (!fileInfo.isFile()) {
+          return null;
+        }
+        return readFile(filePath);
+      })
+      .catch(e => {
+        if (e instanceof DenoError && e.kind === ErrorKind.NotFound) {
+          return null;
+        }
+        throw e;
+      });
+    if (!body) {
+      return;
+    }
+    if (transform) {
+      body = transform(body);
+    }
+    const headers = new Headers();
+    headers.append("Content-Type", contentType);
+    headers.append("Content-Length", body.byteLength.toString());
+    this.status(200);
+    this.headers(headers);
+    this.body(body);
+    await this.end();
   }
 }
 
@@ -204,51 +235,15 @@ async function runMiddleware(m: Middleware, req: any, res: Response) {
 function isPathHandler(m: Middleware): m is PathHandler {
   return typeof m !== "function";
 }
-async function handleFile(
-  filePath: string,
-  req,
-  res: Response,
-  transform?: Function
-) {
-  const extname = path.extname(filePath);
-  const contentType = getType(extname.slice(1));
-  let body = await stat(filePath)
-    .then(fileInfo => {
-      if (!fileInfo.isFile()) {
-        return null;
-      }
-      return readFile(filePath);
-    })
-    .catch(e => {
-      if (e instanceof DenoError && e.kind === ErrorKind.NotFound) {
-        return null;
-      }
-      throw e;
-    });
-  if (!body) {
-    return;
-  }
-  if (transform) {
-    body = transform(body);
-  }
-  const headers = new Headers();
-  headers.append("Content-Type", contentType);
-  headers.append("Content-Length", body.byteLength.toString());
-  res.status(200);
-  res.headers(headers);
-  res.body(body);
-  await res.end();
-  return "done";
-}
 export function static_(dir: string): Middleware {
   return (req, res) => {
     const filePath = path.join(dir, req.url.slice(1));
-    return handleFile(filePath, req, res);
+    return res.file(filePath);
   };
 }
 export function bodyParser(): Middleware {
   return async req => {
-    if (req.headers.get("content-type") === "application/json") {
+    if (req.headers.get("Content-Type") === "application/json") {
       try {
         req.data = JSON.parse(req.body);
       } catch (e) {
