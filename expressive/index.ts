@@ -1,6 +1,6 @@
 import { stat, readFile, DenoError, ErrorKind } from "deno";
 import { getType } from "mime.ts";
-import { path } from "package.ts";
+import { path, http } from "package.ts";
 
 type Method = "GET" | "POST";
 type Middleware = ((req: any) => Promise<string | void>) | PathHandler;
@@ -8,6 +8,40 @@ export interface PathHandler {
   method: Method;
   pattern: string;
   handle(req: any): Promise<string | void>;
+}
+
+const defaultEventHandlers = {
+  "400": async req => {
+    await empty(req, 400);
+  },
+  "404": async req => {
+    await empty(req, 404);
+  },
+  "500": async req => {
+    await empty(req, 500);
+  }
+};
+
+export class App {
+  middlewares: Middleware[];
+  eventHandlers = defaultEventHandlers;
+  constructor() {}
+  use(m: Middleware) {
+    this.middlewares.push(m);
+  }
+  get(...args) {
+    this.use(get.apply(null, args));
+  }
+  post(...args) {
+    this.use(post.apply(null, args));
+  }
+  on(event: string, f: any) {
+    this.eventHandlers[event] = f;
+  }
+  listen(port: number, host?: string) {
+    const serve = intercept(http.serve, this.middlewares, this.eventHandlers);
+    serve(`${host || "127.0.0.1"}:${port}`);
+  }
 }
 
 export function intercept(
