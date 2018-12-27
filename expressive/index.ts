@@ -3,24 +3,48 @@ import { getType } from "mime.ts";
 import { path, http } from "package.ts";
 
 type Method = "HEAD" | "OPTIONS" | "GET" | "POST" | "PUT" | "DELETE" | "PATCH";
-type Middleware =
-  | ((req: any, res: Response) => Promise<string | void>)
-  | PathHandler;
+type Middleware = ((req: any, res: Response) => Promise<Return>) | PathHandler;
 export interface PathHandler {
   method: Method;
   pattern: string;
-  handle(req: any, res: Response): Promise<string | void>;
+  handle(req: any, res: Response): Promise<Return>;
+}
+type Return = ExpressiveEvent | void;
+interface ExpressiveEvent {
+  key: string;
+  value?: any;
+}
+class Done implements ExpressiveEvent {
+  key = "done";
+}
+class ErrorThrown implements ExpressiveEvent {
+  key = "errorThrown";
+  constructor(public value: Error) {}
+}
+class MiddlewareNotMatched implements ExpressiveEvent {
+  key = "middlewareNotMatched";
+}
+class FileNotFound implements ExpressiveEvent {
+  key = "fileNotFound";
+  constructor(public value: Error) {}
+}
+class BodyIsNotJson implements ExpressiveEvent {
+  key = "bodyIsNotJson";
+  constructor(public value: Error) {}
 }
 
 const defaultEventHandlers = {
-  "400": async (req, res) => {
+  errorThrown: async (req, res) => {
     await res.empty(400);
   },
-  "404": async (req, res) => {
+  middlewareNotMatched: async (req, res) => {
     await res.empty(404);
   },
-  "500": async (req, res) => {
-    await res.empty(500);
+  fileNotFound: async (req, res) => {
+    await res.empty(404);
+  },
+  bodyIsNotJson: async (req, res) => {
+    await res.empty(400);
   }
 };
 
@@ -38,33 +62,21 @@ export class App {
     const serve = intercept(http.serve, this.middlewares, this.eventHandlers);
     serve(`${host || "127.0.0.1"}:${port}`);
   }
-  get(
-    pattern,
-    handle: (req: any, res: Response) => Promise<string | void>
-  ): void {
+  get(pattern, handle: (req: any, res: Response) => Promise<Return>): void {
     this.middlewares.push({ method: "GET", pattern, handle });
   }
-  post(
-    pattern,
-    handle: (req: any, res: Response) => Promise<string | void>
-  ): void {
+  post(pattern, handle: (req: any, res: Response) => Promise<Return>): void {
     this.middlewares.push({ method: "POST", pattern, handle });
   }
-  put(
-    pattern,
-    handle: (req: any, res: Response) => Promise<string | void>
-  ): void {
+  put(pattern, handle: (req: any, res: Response) => Promise<Return>): void {
     this.middlewares.push({ method: "PUT", pattern, handle });
   }
-  patch(
-    pattern,
-    handle: (req: any, res: Response) => Promise<string | void>
-  ): void {
+  patch(pattern, handle: (req: any, res: Response) => Promise<Return>): void {
     this.middlewares.push({ method: "PATCH", pattern, handle });
   }
   delete(
     pattern,
-    handle: (req: any, res: Response) => Promise<string | void>
+    handle: (req: any, res: Response) => Promise<ExpressiveEvent>
   ): void {
     this.middlewares.push({ method: "DELETE", pattern, handle });
   }
@@ -107,7 +119,7 @@ class Response {
       body: this._body
     });
   }
-  async empty(status: number) {
+  async empty(status: number): Promise<void> {
     const body = new TextEncoder().encode("");
     const headers = new Headers();
     headers.append("Content-Type", "text/plain");
@@ -117,7 +129,7 @@ class Response {
     this.body(body);
     await this.end();
   }
-  async json(json: any) {
+  async json(json: any): Promise<void> {
     const body = new TextEncoder().encode(JSON.stringify(json));
     const headers = new Headers();
     headers.append("Content-Type", "application/json");
@@ -127,7 +139,7 @@ class Response {
     this.body(body);
     await this.end();
   }
-  async file(filePath: string, transform?: Function) {
+  async file(filePath: string, transform?: Function): Promise<void> {
     const notModified = false;
     if (notModified) {
       return this.empty(304);
@@ -174,23 +186,20 @@ function intercept(
       const req = { raw, ...raw };
       const res = new Response(req);
       _parseURL(req);
-      let flag = null;
+      let event: Return;
       try {
-        flag = await runMiddlewares(middlewares, req, res);
-        flag = flag || "404";
+        event = await runMiddlewares(middlewares, req, res);
+        event = event || new MiddlewareNotMatched();
       } catch (e) {
-        req.error = e;
         if (e instanceof DenoError && e.kind === ErrorKind.NotFound) {
-          flag = "404";
+          event = new FileNotFound(e);
         } else {
-          flag = "500";
+          event = new ErrorThrown(e);
         }
       }
-      if (flag) {
-        const f = special[flag];
-        if (f) {
-          f(req, res);
-        }
+      const f = special[event.key];
+      if (f) {
+        f(req, res, event.value);
       }
     }
   };
@@ -214,7 +223,7 @@ async function runMiddlewares(
   ms: Middleware[],
   req: any,
   res: Response
-): Promise<string | void> {
+): Promise<Return> {
   for (let m of ms) {
     const flag = await runMiddleware(m, req, res);
     if (flag) {
@@ -222,11 +231,15 @@ async function runMiddlewares(
     }
   }
 }
-async function runMiddleware(m: Middleware, req: any, res: Response) {
+async function runMiddleware(
+  m: Middleware,
+  req: any,
+  res: Response
+): Promise<Return> {
   if (isPathHandler(m)) {
     if (m.pattern === req.url) {
       const flag = await m.handle(req, res);
-      return flag || "done";
+      return flag || new Done();
     }
   } else {
     return m(req, res);
@@ -236,19 +249,18 @@ function isPathHandler(m: Middleware): m is PathHandler {
   return typeof m !== "function";
 }
 export function static_(dir: string): Middleware {
-  return (req, res) => {
+  return async (req, res) => {
     const filePath = path.join(dir, req.url.slice(1));
     return res.file(filePath);
   };
 }
 export function bodyParser(): Middleware {
-  return async req => {
+  return async (req, res) => {
     if (req.headers.get("Content-Type") === "application/json") {
       try {
         req.data = JSON.parse(req.body);
       } catch (e) {
-        req.error = e;
-        return "400";
+        return new BodyIsNotJson(e);
       }
     }
   };
