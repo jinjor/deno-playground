@@ -9,29 +9,7 @@ export interface PathHandler {
   pattern: string;
   handle(req: any, res: Response): Promise<Return>;
 }
-type Return = ExpressiveEvent | void;
-interface ExpressiveEvent {
-  key: string;
-  value?: any;
-}
-class Done implements ExpressiveEvent {
-  key = "done";
-}
-class ErrorThrown implements ExpressiveEvent {
-  key = "errorThrown";
-  constructor(public value: Error) {}
-}
-class MiddlewareNotMatched implements ExpressiveEvent {
-  key = "middlewareNotMatched";
-}
-class FileNotFound implements ExpressiveEvent {
-  key = "fileNotFound";
-  constructor(public value: Error) {}
-}
-class BodyIsNotJson implements ExpressiveEvent {
-  key = "bodyIsNotJson";
-  constructor(public value: Error) {}
-}
+type Return = string | void;
 
 const defaultEventHandlers = {
   errorThrown: async (req, res) => {
@@ -74,24 +52,24 @@ export class App {
   patch(pattern, handle: (req: any, res: Response) => Promise<Return>): void {
     this.middlewares.push({ method: "PATCH", pattern, handle });
   }
-  delete(
-    pattern,
-    handle: (req: any, res: Response) => Promise<ExpressiveEvent>
-  ): void {
+  delete(pattern, handle: (req: any, res: Response) => Promise<Return>): void {
     this.middlewares.push({ method: "DELETE", pattern, handle });
   }
 }
 
 class Response {
   private req;
-  _state = "preparing";
-  _status = 200;
-  _headers = new Headers();
-  _body = new Uint8Array(0);
+  _state = "init";
+  _status;
+  _headers;
+  _body;
   constructor(req) {
     this.req = req;
   }
   status(status: number) {
+    if (this._state !== "init") {
+      throw new Error("incorrect response order");
+    }
     this._status = status;
     this._state = "sent_status";
   }
@@ -189,17 +167,18 @@ function intercept(
       let event: Return;
       try {
         event = await runMiddlewares(middlewares, req, res);
-        event = event || new MiddlewareNotMatched();
+        event = event || "middlewareNotMatched";
       } catch (e) {
+        req.error = e;
         if (e instanceof DenoError && e.kind === ErrorKind.NotFound) {
-          event = new FileNotFound(e);
+          event = "fileNotFound";
         } else {
-          event = new ErrorThrown(e);
+          event = "errorThrown";
         }
       }
-      const f = special[event.key];
+      const f = special[event];
       if (f) {
-        f(req, res, event.value);
+        f(req, res);
       }
     }
   };
@@ -238,8 +217,9 @@ async function runMiddleware(
 ): Promise<Return> {
   if (isPathHandler(m)) {
     if (m.pattern === req.url) {
+      req.matchedPattern = m.pattern;
       const flag = await m.handle(req, res);
-      return flag || new Done();
+      return flag || "done";
     }
   } else {
     return m(req, res);
@@ -260,7 +240,8 @@ export function bodyParser(): Middleware {
       try {
         req.data = JSON.parse(req.body);
       } catch (e) {
-        return new BodyIsNotJson(e);
+        req.error = e;
+        return "bodyIsNotJson";
       }
     }
   };

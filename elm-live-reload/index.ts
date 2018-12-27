@@ -30,8 +30,8 @@ export async function main(
       await res.empty(200);
     }
   });
-  app.on("500", async (req, res) => {
-    req.error && console.log(req.error);
+  app.on("errorThrown", async (req, res) => {
+    console.log(req.error);
     await res.empty(500);
   });
   app.listen(port);
