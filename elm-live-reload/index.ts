@@ -16,25 +16,23 @@ export async function main(
   app.use(expressive.static_("./public"));
   app.use(expressive.static_(distDir));
   app.use(expressive.bodyParser());
-  app.get("/", async req => {
-    const data = await readFile(index);
-    const decoder = new TextDecoder();
-    const html_ = decoder
-      .decode(data)
-      .replace("</head>", `<script>${reloader}</script></head>`);
-    await expressive.html(req, html_);
+  app.get("/", async (req, res) => {
+    await res.file(index, data => {
+      const html = new TextDecoder().decode(data);
+      return html.replace("</head>", `<script>${reloader}</script></head>`);
+    });
   });
-  app.get("/live", async req => {
+  app.get("/live", async (req, res) => {
     if (shouldRefresh) {
       shouldRefresh = false;
-      await expressive.empty(req, 205);
+      await res.empty(205);
     } else {
-      await expressive.empty(req, 200);
+      await res.empty(200);
     }
   });
-  app.on("500", async req => {
+  app.on("500", async (req, res) => {
     req.error && console.log(req.error);
-    await expressive.empty(req, 500);
+    await res.empty(500);
   });
   app.listen(port);
   console.log("server listening on port " + port + ".");

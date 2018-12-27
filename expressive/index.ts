@@ -2,23 +2,25 @@ import { stat, readFile, DenoError, ErrorKind } from "deno";
 import { getType } from "mime.ts";
 import { path, http } from "package.ts";
 
-type Method = "GET" | "POST";
-type Middleware = ((req: any) => Promise<string | void>) | PathHandler;
+type Method = "HEAD" | "OPTIONS" | "GET" | "POST" | "PUT" | "DELETE" | "PATCH";
+type Middleware =
+  | ((req: any, res: Response) => Promise<string | void>)
+  | PathHandler;
 export interface PathHandler {
   method: Method;
   pattern: string;
-  handle(req: any): Promise<string | void>;
+  handle(req: any, res: Response): Promise<string | void>;
 }
 
 const defaultEventHandlers = {
-  "400": async req => {
-    await empty(req, 400);
+  "400": async (req, res) => {
+    await res.empty(400);
   },
-  "404": async req => {
-    await empty(req, 404);
+  "404": async (req, res) => {
+    await res.empty(404);
   },
-  "500": async req => {
-    await empty(req, 500);
+  "500": async (req, res) => {
+    await res.empty(500);
   }
 };
 
@@ -29,12 +31,6 @@ export class App {
   use(m: Middleware) {
     this.middlewares.push(m);
   }
-  get(...args) {
-    this.use(get.apply(null, args));
-  }
-  post(...args) {
-    this.use(post.apply(null, args));
-  }
   on(event: string, f: any) {
     this.eventHandlers[event] = f;
   }
@@ -42,9 +38,101 @@ export class App {
     const serve = intercept(http.serve, this.middlewares, this.eventHandlers);
     serve(`${host || "127.0.0.1"}:${port}`);
   }
+  get(
+    pattern,
+    handle: (req: any, res: Response) => Promise<string | void>
+  ): void {
+    this.middlewares.push({ method: "GET", pattern, handle });
+  }
+  post(
+    pattern,
+    handle: (req: any, res: Response) => Promise<string | void>
+  ): void {
+    this.middlewares.push({ method: "POST", pattern, handle });
+  }
+  put(
+    pattern,
+    handle: (req: any, res: Response) => Promise<string | void>
+  ): void {
+    this.middlewares.push({ method: "PUT", pattern, handle });
+  }
+  patch(
+    pattern,
+    handle: (req: any, res: Response) => Promise<string | void>
+  ): void {
+    this.middlewares.push({ method: "PATCH", pattern, handle });
+  }
+  delete(
+    pattern,
+    handle: (req: any, res: Response) => Promise<string | void>
+  ): void {
+    this.middlewares.push({ method: "DELETE", pattern, handle });
+  }
 }
 
-export function intercept(
+class Response {
+  private req;
+  _state = "preparing";
+  _status = 200;
+  _headers = new Headers();
+  _body = new Uint8Array(0);
+  constructor(req) {
+    this.req = req;
+  }
+  status(status: number) {
+    this._status = status;
+    this._state = "sent_status";
+  }
+  headers(headers: Headers) {
+    if (this._state !== "sent_status") {
+      throw new Error("incorrect response order");
+    }
+    this._headers = headers;
+    this._state = "sent_headers";
+  }
+  body(body: Uint8Array) {
+    if (this._state !== "sent_headers") {
+      throw new Error("incorrect response order");
+    }
+    this._body = body;
+  }
+  end(): Promise<void> {
+    if (this._state !== "sent_headers") {
+      throw new Error("incorrect response order");
+    }
+    this._state = "end";
+    return this.req.respond({
+      status: this._status,
+      headers: this._headers,
+      body: this._body
+    });
+  }
+  async empty(status: number) {
+    const body = new TextEncoder().encode("");
+    const headers = new Headers();
+    headers.append("Content-Type", "text/plain");
+    headers.append("Content-Length", "0");
+    this.status(status);
+    this.headers(headers);
+    this.body(body);
+    await this.end();
+  }
+  async json(json: any) {
+    const body = new TextEncoder().encode(JSON.stringify(json));
+    const headers = new Headers();
+    headers.append("Content-Type", "application/json");
+    headers.append("Content-Length", body.byteLength.toString());
+    this.status(200);
+    this.headers(headers);
+    this.body(body);
+    await this.end();
+  }
+  async file(filePath, transform) {
+    return handleFile(filePath, this.req, this, transform);
+  }
+}
+
+function intercept(
   serve_,
   middlewares: Middleware[],
   special: { [key: string]: any }
@@ -52,11 +140,12 @@ export function intercept(
   return async function serve(...args) {
     const s = serve_.apply(null, args);
     for await (const raw of s) {
-      const req = { raw, ...raw, respond: raw.respond.bind(raw) };
+      const req = { raw, ...raw };
+      const res = new Response(req);
       _parseURL(req);
       let flag = null;
       try {
-        flag = await runMiddlewares(middlewares, req);
+        flag = await runMiddlewares(middlewares, req, res);
         flag = flag || "404";
       } catch (e) {
         req.error = e;
@@ -69,7 +158,7 @@ export function intercept(
       if (flag) {
         const f = special[flag];
         if (f) {
-          f(req);
+          f(req, res);
         }
       }
     }
@@ -92,54 +181,69 @@ export function _parseURL(req) {
 }
 async function runMiddlewares(
   ms: Middleware[],
-  req: any
+  req: any,
+  res: Response
 ): Promise<string | void> {
   for (let m of ms) {
-    const flag = await runMiddleware(m, req);
+    const flag = await runMiddleware(m, req, res);
     if (flag) {
       return flag;
     }
   }
 }
-async function runMiddleware(m: Middleware, req: any) {
+async function runMiddleware(m: Middleware, req: any, res: Response) {
   if (isPathHandler(m)) {
     if (m.pattern === req.url) {
-      const flag = await m.handle(req);
+      const flag = await m.handle(req, res);
       return flag || "done";
     }
   } else {
-    return m(req);
+    return m(req, res);
   }
 }
 function isPathHandler(m: Middleware): m is PathHandler {
   return typeof m !== "function";
 }
+async function handleFile(
+  filePath: string,
+  req,
+  res: Response,
+  transform?: Function
+) {
+  const extname = path.extname(filePath);
+  const contentType = getType(extname.slice(1));
+  let body = await stat(filePath)
+    .then(fileInfo => {
+      if (!fileInfo.isFile()) {
+        return null;
+      }
+      return readFile(filePath);
+    })
+    .catch(e => {
+      if (e instanceof DenoError && e.kind === ErrorKind.NotFound) {
+        return null;
+      }
+      throw e;
+    });
+  if (!body) {
+    return;
+  }
+  if (transform) {
+    body = transform(body);
+  }
+  const headers = new Headers();
+  headers.append("Content-Type", contentType);
+  headers.append("Content-Length", body.byteLength.toString());
+  res.status(200);
+  res.headers(headers);
+  res.body(body);
+  await res.end();
+  return "done";
+}
 export function static_(dir: string): Middleware {
-  return async req => {
-    const extname = path.extname(req.url);
-    const contentType = getType(extname.slice(1));
+  return (req, res) => {
     const filePath = path.join(dir, req.url.slice(1));
-    const body = await stat(filePath)
-      .then(fileInfo => {
-        if (!fileInfo.isFile()) {
-          return null;
-        }
-        return readFile(filePath);
-      })
-      .catch(e => {
-        if (e instanceof DenoError && e.kind === ErrorKind.NotFound) {
-          return null;
-        }
-        throw e;
-      });
-    if (!body) {
-      return;
-    }
-    const headers = new Headers();
-    headers.append("Content-Type", contentType);
-    headers.append("Content-Length", body.byteLength.toString());
-    await req.respond({ status: 200, headers, body });
-    return "done";
+    return handleFile(filePath, req, res);
   };
 }
 export function bodyParser(): Middleware {
@@ -153,37 +257,4 @@ export function bodyParser(): Middleware {
       }
     }
   };
-}
-export function get(
-  pattern,
-  handle: (req: any) => Promise<string | void>
-): PathHandler {
-  return { method: "GET", pattern, handle };
-}
-export function post(
-  pattern,
-  handle: (req: any) => Promise<string | void>
-): PathHandler {
-  return { method: "POST", pattern, handle };
-}
-export async function html(req, html: string) {
-  const body = new TextEncoder().encode(html);
-  const headers = new Headers();
-  headers.append("Content-Type", "text/html");
-  headers.append("Content-Length", body.byteLength.toString());
-  await req.respond({ status: 200, headers, body });
-}
-export async function empty(req, status: number) {
-  const body = new TextEncoder().encode("");
-  const headers = new Headers();
-  headers.append("Content-Type", "text/plain");
-  headers.append("Content-Length", "0");
-  await req.respond({ status, headers, body });
-}
-export async function file(req, filePath, contentType) {
-  const body = await readFile(filePath);
-  const headers = new Headers();
-  headers.append("Content-Type", contentType);
-  headers.append("Content-Length", body.byteLength.toString());
-  await req.respond({ status: 200, headers, body });
 }
