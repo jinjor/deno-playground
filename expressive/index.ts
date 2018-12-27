@@ -23,7 +23,7 @@ const defaultEventHandlers = {
 };
 
 export class App {
-  middlewares: Middleware[];
+  middlewares: Middleware[] = [];
   eventHandlers = defaultEventHandlers;
   constructor() {}
   use(m: Middleware) {
@@ -52,7 +52,7 @@ export function intercept(
   return async function serve(...args) {
     const s = serve_.apply(null, args);
     for await (const raw of s) {
-      const req = { raw, ...raw };
+      const req = { raw, ...raw, respond: raw.respond.bind(raw) };
       _parseURL(req);
       let flag = null;
       try {
@@ -76,10 +76,7 @@ export function intercept(
   };
 }
 export function _parseURL(req) {
-  const url = new URL(req.url);
-  req.protocol = url.protocol.slice(0, -1);
-  req.host = url.hostname;
-  req.port = url.port;
+  const url = new URL("http://a.b" + req.url);
   req.path = url.pathname;
   const query = {};
   for (let [k, v] of new URLSearchParams(url.search) as any) {
