@@ -18,15 +18,15 @@ const defaultOptions = {
 };
 
 interface Watcher extends AsyncIterable<string[]> {
-  start(): AsyncIterator<string[]>;
-  end(): void;
+  start(callback: (changes: string[]) => void): () => void;
+  end: () => void;
 }
 
 export default function watch(dir: string, options?: Options): Watcher {
   options = Object.assign({}, defaultOptions, options);
   let abort = false;
   let timeout = null;
-  async function* start() {
+  async function* gen() {
     let [files] = await detectChanges({}, dir, options);
     while (true) {
       await new Promise(resolve => {
@@ -47,8 +47,15 @@ export default function watch(dir: string, options?: Options): Watcher {
     }
   }
   return {
-    [Symbol.asyncIterator]: start,
-    start,
+    [Symbol.asyncIterator]: gen,
+    start: function(callback) {
+      (async () => {
+        for await (const changes of gen()) {
+          callback(changes);
+        }
+      })();
+      return this.end.bind(this);
+    },
     end() {
       abort = true;
       if (timeout) {
