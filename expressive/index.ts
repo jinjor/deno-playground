@@ -1,6 +1,6 @@
 import { stat, readFile, DenoError, ErrorKind } from "deno";
 import { getType } from "mime.ts";
-import { path, http } from "package.ts";
+import { path, http, color } from "package.ts";
 
 type Method = "HEAD" | "OPTIONS" | "GET" | "POST" | "PUT" | "DELETE" | "PATCH";
 type Handle<T> = (req: Request, res: Response) => Promise<T>;
@@ -357,3 +357,21 @@ export const bodyParser = {
     };
   }
 };
+export function simpleLog(options = { verbose: false }): Handle<void> {
+  return async (req, res) => {
+    if (!res.status) {
+      console.log(req.method, req.url);
+    } else if (res.status >= 500) {
+      console.log(color.red(res.status + ""), req.method, req.url);
+      if (req.error) {
+        console.log(color.red(req.error + ""));
+      }
+    } else if (res.status >= 400) {
+      console.log(color.yellow(res.status + ""), req.method, req.url);
+    } else if (res.status >= 300) {
+      console.log(color.cyan(res.status + ""), req.method, req.url);
+    } else if (res.status >= 200) {
+      console.log(color.green(res.status + ""), req.method, req.url);
+    }
+  };
+}

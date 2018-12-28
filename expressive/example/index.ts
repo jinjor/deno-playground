@@ -1,4 +1,3 @@
-import { color } from "https://deno.land/x/colors/main.ts";
 import * as expressive from "../index.ts";
 
 const port = 3000;
@@ -19,21 +18,7 @@ app.post("/api/todos", async (req, res) => {
 app.get("/api/todos/{id}", async (req, res) => {
   res.json(todos[req.params.id]);
 });
-app.on("errorThrown", async (req, res) => {
-  console.log(req.error);
-  await res.empty(500);
-});
-app.on("done", async (req, res) => {
-  if (res.status >= 500) {
-    console.log(color.red(res.status + ""), req.method, req.url);
-  } else if (res.status >= 400) {
-    console.log(color.yellow(res.status + ""), req.method, req.url);
-  } else if (res.status >= 300) {
-    console.log(color.cyan(res.status + ""), req.method, req.url);
-  } else {
-    console.log(color.green(res.status + ""), req.method, req.url);
-  }
-});
+app.on("done", expressive.simpleLog());
 app.listen(port, p => {
   console.log("app listening on port " + p);
 });
