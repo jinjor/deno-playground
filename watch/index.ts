@@ -10,17 +10,16 @@ export interface Options {
   ignoreDotFiles?: boolean;
   log?: Function;
 }
+export interface Watcher extends AsyncIterable<string[]> {
+  start(callback: (changes: string[]) => void): () => void;
+  end: () => void;
+}
 const defaultOptions = {
   interval: 1000,
   followSymlink: false,
   ignoreDotFiles: true,
   log: null
 };
-
-interface Watcher extends AsyncIterable<string[]> {
-  start(callback: (changes: string[]) => void): () => void;
-  end: () => void;
-}
 
 export default function watch(dir: string, options?: Options): Watcher {
   options = Object.assign({}, defaultOptions, options);
@@ -43,7 +42,9 @@ export default function watch(dir: string, options?: Options): Watcher {
         options.log(
           `took ${end - start}ms to traverse ${Object.keys(files).length} files`
         );
-      yield changes;
+      if (changes) {
+        yield changes;
+      }
     }
   }
   return {
@@ -72,12 +73,9 @@ async function detectChanges(
 ): Promise<[any, string[] | null]> {
   const curr = {};
   const changes = [];
-  function push(change) {
-    changes.push(change);
-  }
-  await walk(prev, curr, dir, followSymlink, ignoreDotFiles, push);
+  await walk(prev, curr, dir, followSymlink, ignoreDotFiles, changes);
   for (let path in prev) {
-    push({
+    changes.push({
       action: "DELETED",
       file: path
     });
@@ -91,7 +89,7 @@ async function walk(
   dir: string,
   followSymlink: boolean,
   ignoreDotFiles: boolean,
-  push: (change: Change) => void
+  changes: Change[]
 ): Promise<void> {
   let files = [];
   let dirInfo = await lstat(dir);
@@ -110,18 +108,18 @@ async function walk(
     }
     if (f.isDirectory() || f.isSymlink()) {
       promises.push(
-        walk(prev, curr, f.path, followSymlink, ignoreDotFiles, push)
+        walk(prev, curr, f.path, followSymlink, ignoreDotFiles, changes)
       );
       continue;
     }
     curr[f.path] = f.modified || f.created;
     if (!prev[f.path]) {
-      push({
+      changes.push({
         action: "ADDED",
         file: f.path
       });
     } else if (prev[f.path] < curr[f.path]) {
-      push({
+      changes.push({
         action: "MODIFIED",
         file: f.path
       });
