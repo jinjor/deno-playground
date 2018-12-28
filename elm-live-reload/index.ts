@@ -34,9 +34,10 @@ export async function main(
     console.log(req.error);
     await res.empty(500);
   });
-  app.listen(port);
-  console.log("server listening on port " + port + ".");
-  opn("http://localhost:" + port);
+  app.listen(port, () => {
+    console.log("server listening on port " + port + ".");
+    opn("http://localhost:" + port);
+  });
   watch(
     watchDir,
     async () => {
