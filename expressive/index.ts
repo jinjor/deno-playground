@@ -81,17 +81,24 @@ export class App {
   on(event: string, f: any) {
     this.eventHandlers[event] = f;
   }
-  listen(port: number, host: string = "127.0.0.1") {
+  listen(port: number, host, callback?) {
+    callback = typeof host === "function" ? host : callback || function() {};
+    host = typeof host === "string" ? host : "127.0.0.1";
     const s = http.serve(`${host}:${port}`);
     (async () => {
+      callback(port);
       for await (const raw of s) {
-        const body = await raw.body();
-        raw.body = body;
         const req = new Request(raw);
+        const body = await raw.body();
+        req.body = body;
         await handleRequest(req, this.middlewares, this.eventHandlers);
       }
     })();
-    return s;
+    return {
+      close() {
+        throw new Error("cannot close for now");
+      }
+    };
   }
   private addPathHandler(
     method: Method,
@@ -159,10 +166,10 @@ export class Request {
 
 class Response {
   private req;
-  _state = "init";
-  _status;
-  _headers;
-  _body;
+  private _state = "init";
+  status: number;
+  headers: Headers;
+  body: Uint8Array;
   constructor(req: any) {
     this.req = req;
   }
@@ -170,21 +177,21 @@ class Response {
     if (this._state !== "init") {
       throw new Error("incorrect response order");
     }
-    this._status = status;
+    this.status = status;
     this._state = "status_done";
   }
   writeHeaders(headers: Headers) {
     if (this._state !== "status_done") {
       throw new Error("incorrect response order");
     }
-    this._headers = headers;
+    this.headers = headers;
     this._state = "headers_done";
   }
   writeBody(body: Uint8Array) {
     if (this._state !== "headers_done") {
       throw new Error("incorrect response order");
     }
-    this._body = body;
+    this.body = body;
   }
   end(): Promise<void> {
     if (this._state !== "headers_done") {
@@ -192,9 +199,9 @@ class Response {
     }
     this._state = "end";
     return this.req.respond({
-      status: this._status,
-      headers: this._headers,
-      body: this._body
+      status: this.status,
+      headers: this.headers,
+      body: this.body
     });
   }
   send(
