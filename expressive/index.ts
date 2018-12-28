@@ -260,6 +260,8 @@ function intercept(
   return async function serve(...args) {
     const s = serve_.apply(null, args);
     for await (const raw of s) {
+      const body = await raw.body();
+      raw.body = body;
       const req = new Request(raw);
       await handleRequest(req, middlewares, eventHandlers);
     }
@@ -307,6 +309,9 @@ async function runMiddleware(
   res: Response
 ): Promise<Return> {
   if (isPathHandler(m)) {
+    if (m.method !== req.method) {
+      return;
+    }
     const params = m.match(req.url);
     if (params) {
       req.context.matchedPattern = m.pattern;
@@ -335,7 +340,8 @@ export const bodyParser = {
     return async (req, res) => {
       if (req.headers.get("Content-Type") === "application/json") {
         try {
-          req.data = JSON.parse(new TextDecoder().decode(req.body));
+          const text = new TextDecoder().decode(req.body);
+          req.data = JSON.parse(text);
         } catch (e) {
           req.error = e;
           return "bodyNotJson";
