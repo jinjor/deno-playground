@@ -1,4 +1,4 @@
-import { run, readFile } from "deno";
+import { run } from "deno";
 import { expressive, path, opn, watch } from "package.ts";
 
 export async function main(
@@ -11,11 +11,11 @@ export async function main(
   let shouldRefresh = false;
   const app = new expressive.App();
   app.use(async req => {
-    // console.log(req.method, req.url);
+    console.log(req.method, req.url);
   });
   app.use(expressive.static_("./public"));
   app.use(expressive.static_(distDir));
-  app.use(expressive.bodyParser());
+  app.use(expressive.bodyParser.json());
   app.get("/", async (req, res) => {
     await res.file(index, data => {
       const html = new TextDecoder().decode(data);

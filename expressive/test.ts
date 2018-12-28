@@ -1,12 +1,11 @@
 import { test, assertEqual } from "https://deno.land/x/testing/testing.ts";
-import { _parseURL } from "index.ts";
+import { Request } from "index.ts";
 import { getType } from "mime.ts";
 
 test(function parse_url() {
-  const req: any = {
+  const req = new Request({
     url: "/files-tmb/1234/abc.png?key=val"
-  };
-  _parseURL(req);
+  });
   assertEqual(req.path, "/files-tmb/1234/abc.png");
   assertEqual(req.query.key, "val");
 });
