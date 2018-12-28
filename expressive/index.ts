@@ -56,7 +56,6 @@ interface EventHandlers {
 }
 
 const defaultEventHandlers: EventHandlers = {
-  done: async (req, res) => {},
   errorThrown: async (req, res) => {
     await res.empty(500);
   },
@@ -68,7 +67,11 @@ const defaultEventHandlers: EventHandlers = {
   },
   bodyNotJson: async (req, res) => {
     await res.empty(400);
-  }
+  },
+  responseNotDone: async (req, res) => {
+    await res.end();
+  },
+  done: async (req, res) => {}
 };
 
 export class App {
@@ -173,6 +176,9 @@ class Response {
   constructor(req: any) {
     this.req = req;
   }
+  get done() {
+    return this._state === "end";
+  }
   writeStatus(status: number) {
     if (this._state !== "init") {
       throw new Error("incorrect response order");
@@ -233,11 +239,10 @@ class Response {
   json(json: any): Promise<void> {
     return this.send(200, new Headers(), JSON.stringify(json));
   }
-  async file(filePath: string, transform?: Function): Promise<boolean> {
+  async file(filePath: string, transform?: Function): Promise<void> {
     const notModified = false;
     if (notModified) {
-      await this.empty(304);
-      return true;
+      return this.empty(304);
     }
     const extname = path.extname(filePath);
     const contentType = getType(extname.slice(1));
@@ -255,15 +260,14 @@ class Response {
         throw e;
       });
     if (!body) {
-      return false;
+      return;
     }
     if (transform) {
       body = transform(body);
     }
     const headers = new Headers();
     headers.append("Content-Type", contentType);
-    await this.send(200, headers, body);
-    return true;
+    return this.send(200, headers, body);
   }
 }
 
@@ -276,7 +280,9 @@ async function handleRequest(
   let event: Return;
   try {
     event = await runMiddlewares(middlewares, req, res);
-    event = event || "middlewareNotMatched";
+    if (!res.done) {
+      event = "middlewareNotMatched";
+    }
   } catch (e) {
     req.error = e;
     if (e instanceof DenoError && e.kind === ErrorKind.NotFound) {
@@ -285,10 +291,16 @@ async function handleRequest(
       event = "errorThrown";
     }
   }
-  const f = eventHandlers[event];
-  if (f) {
-    f(req, res);
+  if (event) {
+    const f = eventHandlers[event];
+    if (f) {
+      await f(req, res);
+    }
   }
+  if (!res.done) {
+    await eventHandlers.responseNotDone(req, res);
+  }
+  await eventHandlers.done(req, res);
 }
 async function runMiddlewares(
   ms: Middleware[],
@@ -297,7 +309,7 @@ async function runMiddlewares(
 ): Promise<Return> {
   for (let m of ms) {
     const flag = await runMiddleware(m, req, res);
-    if (flag) {
+    if (res.done) {
       return flag;
     }
   }
@@ -315,8 +327,7 @@ async function runMiddleware(
     if (params) {
       req.context.matchedPattern = m.pattern;
       req.params = params;
-      const flag = await m.handle(req, res);
-      return flag || "done";
+      return m.handle(req, res);
     }
   } else {
     return m(req, res);
@@ -328,10 +339,7 @@ function isPathHandler(m: Middleware): m is PathHandler {
 export function static_(dir: string): Middleware {
   return async (req, res) => {
     const filePath = path.join(dir, req.url.slice(1) || "index.html");
-    const hit = await res.file(filePath);
-    if (hit) {
-      return "done";
-    }
+    return res.file(filePath);
   };
 }
 export const bodyParser = {
