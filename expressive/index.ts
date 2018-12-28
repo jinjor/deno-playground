@@ -81,9 +81,17 @@ export class App {
   on(event: string, f: any) {
     this.eventHandlers[event] = f;
   }
-  listen(port: number, host?: string) {
-    const serve = intercept(http.serve, this.middlewares, this.eventHandlers);
-    serve(`${host || "127.0.0.1"}:${port}`);
+  listen(port: number, host: string = "127.0.0.1") {
+    const s = http.serve(`${host}:${port}`);
+    (async () => {
+      for await (const raw of s) {
+        const body = await raw.body();
+        raw.body = body;
+        const req = new Request(raw);
+        await handleRequest(req, this.middlewares, this.eventHandlers);
+      }
+    })();
+    return s;
   }
   private addPathHandler(
     method: Method,
@@ -196,15 +204,15 @@ class Response {
   ): Promise<void> {
     if (typeof body === "string") {
       body = new TextEncoder().encode(body);
-      if (headers.get("Content-Type") === undefined) {
+      if (!headers.has("Content-Type")) {
         headers.append("Content-Type", "text/plain");
       }
     } else {
-      if (headers.get("Content-Type") === undefined) {
+      if (!headers.has("Content-Type")) {
         headers.append("Content-Type", "application/octet-stream");
       }
     }
-    if (headers.get("Content-Length") === undefined) {
+    if (!headers.has("Content-Length")) {
       headers.append("Content-Length", body.byteLength.toString());
     }
     this.writeStatus(status);
@@ -250,22 +258,6 @@ class Response {
     await this.send(200, headers, body);
     return true;
   }
-}
-
-function intercept(
-  serve_,
-  middlewares: Middleware[],
-  eventHandlers: EventHandlers
-) {
-  return async function serve(...args) {
-    const s = serve_.apply(null, args);
-    for await (const raw of s) {
-      const body = await raw.body();
-      raw.body = body;
-      const req = new Request(raw);
-      await handleRequest(req, middlewares, eventHandlers);
-    }
-  };
 }
 
 async function handleRequest(
