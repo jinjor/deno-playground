@@ -11,7 +11,7 @@ export async function main(
   let shouldRefresh = false;
   const app = new expressive.App();
   app.use(async req => {
-    console.log(req.method, req.url);
+    // console.log(req.method, req.url);
   });
   app.use(expressive.static_("./public"));
   app.use(expressive.static_(distDir));

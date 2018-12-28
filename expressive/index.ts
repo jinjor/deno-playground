@@ -5,10 +5,49 @@ import { path, http } from "package.ts";
 type Method = "HEAD" | "OPTIONS" | "GET" | "POST" | "PUT" | "DELETE" | "PATCH";
 type Handle<T> = (req: Request, res: Response) => Promise<T>;
 type Middleware = (Handle<Return>) | PathHandler;
+type PathMatcher = (pattern: string) => (path: string) => any;
+
+export const simplePathMatcher: PathMatcher = _pattern => {
+  const pattern = _pattern.split("/");
+  for (let i = 0; i < pattern.length; i++) {
+    const p = pattern[i];
+    const names = new Set();
+    if (p[0] === "{" && p[p.length - 1] === "}") {
+      const name = p.slice(1, -1).trim();
+      if (!name) {
+        throw new Error("invalid param name");
+      }
+      if (names.has(name)) {
+        throw new Error("duplicated param name");
+      }
+      names.add(name);
+    } else if (!p.trim() && i > 0 && i < pattern.length - 1) {
+      throw new Error("invalid path segment");
+    }
+  }
+  return _path => {
+    const path = _path.split("/");
+    if (pattern.length !== path.length) {
+      return null;
+    }
+    const params = {};
+    for (let i = 0; i < pattern.length; i++) {
+      const p = pattern[i];
+      if (p[0] === "{" && p[p.length - 1] === "}") {
+        const name = p.slice(1, -1).trim();
+        params[name] = path[i];
+      } else if (p !== path[i]) {
+        return null;
+      }
+    }
+    return params;
+  };
+};
 
 export interface PathHandler {
   method: Method;
   pattern: string;
+  match: (path: string) => any;
   handle: Handle<Return>;
 }
 type Return = string | void;
@@ -46,20 +85,32 @@ export class App {
     const serve = intercept(http.serve, this.middlewares, this.eventHandlers);
     serve(`${host || "127.0.0.1"}:${port}`);
   }
+  private addPathHandler(
+    method: Method,
+    pattern: string,
+    handle: Handle<Return>
+  ) {
+    this.middlewares.push({
+      method,
+      pattern,
+      match: simplePathMatcher(pattern),
+      handle
+    });
+  }
   get(pattern, handle: Handle<Return>): void {
-    this.middlewares.push({ method: "GET", pattern, handle });
+    this.addPathHandler("GET", pattern, handle);
   }
   post(pattern, handle: Handle<Return>): void {
-    this.middlewares.push({ method: "POST", pattern, handle });
+    this.addPathHandler("POST", pattern, handle);
   }
   put(pattern, handle: Handle<Return>): void {
-    this.middlewares.push({ method: "PUT", pattern, handle });
+    this.addPathHandler("PUT", pattern, handle);
   }
   patch(pattern, handle: Handle<Return>): void {
-    this.middlewares.push({ method: "PATCH", pattern, handle });
+    this.addPathHandler("PATCH", pattern, handle);
   }
   delete(pattern, handle: Handle<Return>): void {
-    this.middlewares.push({ method: "DELETE", pattern, handle });
+    this.addPathHandler("DELETE", pattern, handle);
   }
 }
 
@@ -256,8 +307,10 @@ async function runMiddleware(
   res: Response
 ): Promise<Return> {
   if (isPathHandler(m)) {
-    if (m.pattern === req.url) {
+    const params = m.match(req.url);
+    if (params) {
       req.context.matchedPattern = m.pattern;
+      req.params = params;
       const flag = await m.handle(req, res);
       return flag || "done";
     }

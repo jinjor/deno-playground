@@ -1,5 +1,9 @@
-import { test, assertEqual } from "https://deno.land/x/testing/testing.ts";
-import { Request } from "index.ts";
+import {
+  test,
+  assert,
+  assertEqual
+} from "https://deno.land/x/testing/testing.ts";
+import { Request, simplePathMatcher } from "index.ts";
 import { getType } from "mime.ts";
 
 test(function parse_url() {
@@ -18,4 +22,32 @@ test(function mime() {
   assertEqual(getType("png"), "image/png");
   assertEqual(getType("js"), "application/javascript");
   assertEqual(getType("json"), "application/json");
+});
+
+test(function pathMatcher() {
+  assert(!!simplePathMatcher("/")("/"));
+  assert(!!simplePathMatcher("/foo")("/foo"));
+  assert(!!simplePathMatcher("/foo/")("/foo/"));
+  assert(!!simplePathMatcher("/foo/1")("/foo/1"));
+  assertEqual(simplePathMatcher("/foo")("/"), null);
+  assertEqual(simplePathMatcher("/foo")("/fooo"), null);
+  assertEqual(simplePathMatcher("/foo")("/foo/"), null);
+  assertEqual(simplePathMatcher("/{a}")("/foo").a, "foo");
+  assertEqual(simplePathMatcher("/{a}/foo/{xxx}")("/34/foo/1").a, "34");
+  assertEqual(simplePathMatcher("/{a}/foo/{xxx}")("/34/foo/1").xxx, "1");
+  let ok = true;
+  try {
+    simplePathMatcher("//");
+    ok = false;
+  } catch (e) {}
+  assert(ok);
+  try {
+    simplePathMatcher("/{}");
+    ok = false;
+  } catch (e) {}
+  assert(ok);
+  try {
+    simplePathMatcher("/{x}/{x}");
+    ok = false;
+  } catch (e) {}
 });
