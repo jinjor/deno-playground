@@ -12,12 +12,17 @@ tmpDir = path.join(tmpDir, "watch-test");
 test(async function Watch() {
   await mkdir(tmpDir);
   let result = [];
-  const unwatch = await watch(tmpDir, r => {
-    result = result.concat(r);
-  });
+  const watcher = watch(tmpDir);
+  (async () => {
+    for await (const changes of watcher) {
+      result = result.concat(changes);
+    }
+  })();
   try {
     const filePath = path.join(tmpDir, randomFileName());
     await writeFile(filePath, new Uint8Array(0));
+    await new Promise(resolve => setTimeout(resolve, 100));
+    assertEqual(result.length, 0);
     await new Promise(resolve => setTimeout(resolve, 1200));
     assertEqual(result.length, 1);
     await writeFile(filePath, new Uint8Array(0));
@@ -27,6 +32,31 @@ test(async function Watch() {
     await new Promise(resolve => setTimeout(resolve, 1200));
     assertEqual(result.length, 3);
   } finally {
-    unwatch();
+    watcher.end();
   }
+  // await Promise.all([
+  //   async () => {
+  //     console.log(0);
+  //     for await (const changes of watcher) {
+  //       result = result.concat(changes);
+  //     }
+  //   },
+  //   async () => {
+  //     console.log(1);
+  //     try {
+  //       const filePath = path.join(tmpDir, randomFileName());
+  //       await writeFile(filePath, new Uint8Array(0));
+  //       await new Promise(resolve => setTimeout(resolve, 1200));
+  //       assertEqual(result.length, 1);
+  //       await writeFile(filePath, new Uint8Array(0));
+  //       await new Promise(resolve => setTimeout(resolve, 1200));
+  //       assertEqual(result.length, 2);
+  //       await remove(filePath);
+  //       await new Promise(resolve => setTimeout(resolve, 1200));
+  //       assertEqual(result.length, 3);
+  //     } finally {
+  //       watcher.end();
+  //     }
+  //   }
+  // ]);
 });
