@@ -13,10 +13,10 @@ app.post("/api/todos", async req => {
     name: req.data.name
   };
   todos.push(todo);
-  req.json(todo);
+  return req.json(todo);
 });
 app.get("/api/todos/{id}", async req => {
-  req.json(todos[req.params.id]);
+  return req.json(todos[req.params.id]);
 });
 app.on("done", expressive.simpleLog());
 app.listen(port, p => {

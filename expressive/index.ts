@@ -183,13 +183,6 @@ export class Request {
       if (!headers.has("Content-Type")) {
         headers.append("Content-Type", "text/plain");
       }
-    } else {
-      if (!headers.has("Content-Type")) {
-        headers.append("Content-Type", "application/octet-stream");
-      }
-    }
-    if (!headers.has("Content-Length") && body instanceof Uint8Array) {
-      headers.append("Content-Length", body.byteLength.toString());
     }
     this.response = { status, headers, body };
     await this.raw.respond(this.response);
