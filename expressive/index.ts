@@ -1,20 +1,9 @@
-import {
-  stat,
-  readFile,
-  open,
-  DenoError,
-  ErrorKind,
-  close,
-  toAsyncIterator,
-  Reader,
-  Buffer,
-  copy
-} from "deno";
+import { stat, readFile, open, DenoError, ErrorKind, close } from "deno";
 import { getType } from "mime.ts";
 import { path, http, color } from "package.ts";
 
 type Method = "HEAD" | "OPTIONS" | "GET" | "POST" | "PUT" | "DELETE" | "PATCH";
-type Handle<T> = (req: Request, res: Response) => Promise<T>;
+type Handle<T> = (req: Request) => Promise<T>;
 type Middleware = (Handle<Return>) | PathHandler;
 type PathMatcher = (pattern: string) => (path: string) => any;
 
@@ -67,19 +56,19 @@ interface EventHandlers {
 }
 
 const defaultEventHandlers: EventHandlers = {
-  errorThrown: async (req, res) => {
-    await res.empty(500);
+  errorThrown: async req => {
+    await req.empty(500);
   },
-  middlewareNotMatched: async (req, res) => {
-    await res.empty(404);
+  middlewareNotMatched: async req => {
+    await req.empty(404);
   },
-  fileNotFound: async (req, res) => {
-    await res.empty(404);
+  fileNotFound: async req => {
+    await req.empty(404);
   },
-  bodyNotJson: async (req, res) => {
-    await res.empty(400);
+  bodyNotJson: async req => {
+    await req.empty(400);
   },
-  done: async (req, res) => {}
+  done: async req => {}
 };
 
 export class App {
@@ -150,6 +139,7 @@ export class Request {
   headers: Headers;
   body: Uint8Array;
   data: any;
+  response: http.Response;
   error?: Error;
   context: { [key: string]: any };
   constructor(public raw) {
@@ -173,12 +163,6 @@ export class Request {
     this.query = query;
     this.context = {};
   }
-}
-
-class Response {
-  done = false;
-  res;
-  constructor(private req: any) {}
   async send(
     status: number,
     headers: Headers,
@@ -197,9 +181,8 @@ class Response {
     if (!headers.has("Content-Length")) {
       headers.append("Content-Length", body.byteLength.toString());
     }
-    this.res = { status, headers, body };
-    this.done = true;
-    await this.req.respond(this.res);
+    this.response = { status, headers, body };
+    await this.raw.respond(this.response);
   }
   empty(status: number): Promise<void> {
     return this.send(status, new Headers(), "");
@@ -249,11 +232,10 @@ async function handleRequest(
   middlewares: Middleware[],
   eventHandlers: EventHandlers
 ) {
-  const res = new Response(req.raw);
   let event: Return;
   try {
-    event = await runMiddlewares(middlewares, req, res);
-    if (!res.done) {
+    event = await runMiddlewares(middlewares, req);
+    if (!req.response) {
       event = "middlewareNotMatched";
     }
   } catch (e) {
@@ -267,31 +249,23 @@ async function handleRequest(
   if (event) {
     const f = eventHandlers[event];
     if (f) {
-      await f(req, res);
+      await f(req);
     }
   }
-  if (!res.done) {
-    await eventHandlers.responseNotDone(req, res);
+  if (!req.response) {
+    await eventHandlers.responseNotDone(req);
   }
-  await eventHandlers.done(req, res);
+  await eventHandlers.done(req);
 }
-async function runMiddlewares(
-  ms: Middleware[],
-  req: Request,
-  res: Response
-): Promise<Return> {
+async function runMiddlewares(ms: Middleware[], req: Request): Promise<Return> {
   for (let m of ms) {
-    const flag = await runMiddleware(m, req, res);
-    if (res.done) {
+    const flag = await runMiddleware(m, req);
+    if (req.response) {
       return flag;
     }
   }
 }
-async function runMiddleware(
-  m: Middleware,
-  req: Request,
-  res: Response
-): Promise<Return> {
+async function runMiddleware(m: Middleware, req: Request): Promise<Return> {
   if (isPathHandler(m)) {
     if (m.method !== req.method) {
       return;
@@ -300,24 +274,24 @@ async function runMiddleware(
     if (params) {
       req.context.matchedPattern = m.pattern;
       req.params = params;
-      return m.handle(req, res);
+      return m.handle(req);
     }
   } else {
-    return m(req, res);
+    return m(req);
   }
 }
 function isPathHandler(m: Middleware): m is PathHandler {
   return typeof m !== "function";
 }
 export function static_(dir: string): Middleware {
-  return async (req, res) => {
+  return async req => {
     const filePath = path.join(dir, req.url.slice(1) || "index.html");
-    return res.file(filePath);
+    return req.file(filePath);
   };
 }
 export const bodyParser = {
   json: function bodyParser(): Middleware {
-    return async (req, res) => {
+    return async req => {
       if (req.headers.get("Content-Type") === "application/json") {
         try {
           const text = new TextDecoder().decode(req.body);
@@ -331,7 +305,8 @@ export const bodyParser = {
   }
 };
 export function simpleLog(options = { verbose: false }): Handle<void> {
-  return async (req, { res }) => {
+  return async req => {
+    const res = req.response;
     if (!res.status) {
       console.log(req.method, req.url);
     } else if (res.status >= 500) {
