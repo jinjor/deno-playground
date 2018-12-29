@@ -1,4 +1,12 @@
-import { stat, readFile, open, DenoError, ErrorKind, close } from "deno";
+import {
+  stat,
+  readFile,
+  open,
+  DenoError,
+  ErrorKind,
+  close,
+  Reader
+} from "deno";
 import { getType } from "mime.ts";
 import { path, http, color } from "package.ts";
 
@@ -89,8 +97,6 @@ export class App {
       callback(port);
       for await (const raw of s) {
         const req = new Request(raw);
-        const body = await raw.body();
-        req.body = body;
         await handleRequest(req, this.middlewares, this.eventHandlers);
       }
     })();
@@ -130,23 +136,27 @@ export class App {
 }
 
 export class Request {
-  method: Method;
-  url: string;
+  get method(): Method {
+    return this.raw.method;
+  }
+  get url(): string {
+    return this.raw.url;
+  }
+  get headers(): Headers {
+    return this.raw.headers;
+  }
+  get body(): () => Promise<Uint8Array> {
+    return this.raw.body;
+  }
   path: string;
   search: string;
   query: { [key: string]: string | string[] };
   params: { [key: string]: string };
-  body: () => Promise<Uint8Array>;
-  headers: Headers;
   data: any;
   response: http.Response;
   error?: Error;
   context: { [key: string]: any };
   constructor(public raw) {
-    this.method = raw.method;
-    this.url = raw.url;
-    this.headers = raw.headers;
-    this.body = raw.body;
     const url = new URL("http://a.b" + raw.url);
     this.path = url.pathname;
     this.search = url.search;
@@ -166,7 +176,7 @@ export class Request {
   async send(
     status: number,
     headers: Headers,
-    body: string | Uint8Array
+    body: string | Uint8Array | Reader
   ): Promise<void> {
     if (typeof body === "string") {
       body = new TextEncoder().encode(body);
@@ -178,7 +188,7 @@ export class Request {
         headers.append("Content-Type", "application/octet-stream");
       }
     }
-    if (!headers.has("Content-Length")) {
+    if (!headers.has("Content-Length") && body instanceof Uint8Array) {
       headers.append("Content-Length", body.byteLength.toString());
     }
     this.response = { status, headers, body };
