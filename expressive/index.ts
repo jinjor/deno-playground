@@ -136,8 +136,8 @@ export class Request {
   search: string;
   query: { [key: string]: string | string[] };
   params: { [key: string]: string };
+  body: () => Promise<Uint8Array>;
   headers: Headers;
-  body: Uint8Array;
   data: any;
   response: http.Response;
   error?: Error;
@@ -188,7 +188,9 @@ export class Request {
     return this.send(status, new Headers(), "");
   }
   json(json: any): Promise<void> {
-    return this.send(200, new Headers(), JSON.stringify(json));
+    const headers = new Headers();
+    headers.append("Content-Type", "application/json");
+    return this.send(200, headers, JSON.stringify(json));
   }
   async file(filePath: string, transform?: Function): Promise<void> {
     const notModified = false;
@@ -213,12 +215,6 @@ export class Request {
         body = await open(filePath);
       }
       await this.send(200, headers, body);
-    } catch (e) {
-      if (e instanceof DenoError && e.kind === ErrorKind.NotFound) {
-        return;
-      } else {
-        throw e;
-      }
     } finally {
       if (file) {
         close(file.rid);
@@ -286,7 +282,15 @@ function isPathHandler(m: Middleware): m is PathHandler {
 export function static_(dir: string): Middleware {
   return async req => {
     const filePath = path.join(dir, req.url.slice(1) || "index.html");
-    return req.file(filePath);
+    try {
+      return req.file(filePath);
+    } catch (e) {
+      if (e instanceof DenoError && e.kind === ErrorKind.NotFound) {
+        return;
+      } else {
+        throw e;
+      }
+    }
   };
 }
 export const bodyParser = {
@@ -294,7 +298,8 @@ export const bodyParser = {
     return async req => {
       if (req.headers.get("Content-Type") === "application/json") {
         try {
-          const text = new TextDecoder().decode(req.body);
+          const body = await req.body();
+          const text = new TextDecoder().decode(body);
           req.data = JSON.parse(text);
         } catch (e) {
           req.error = e;
