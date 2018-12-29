@@ -1,4 +1,15 @@
-import { stat, readFile, DenoError, ErrorKind } from "deno";
+import {
+  stat,
+  readFile,
+  open,
+  DenoError,
+  ErrorKind,
+  close,
+  toAsyncIterator,
+  Reader,
+  Buffer,
+  copy
+} from "deno";
 import { getType } from "mime.ts";
 import { path, http, color } from "package.ts";
 
@@ -172,28 +183,28 @@ class Response {
   private _state = "init";
   status: number;
   headers: Headers;
-  body: Uint8Array;
+  body: Uint8Array | Reader;
   constructor(req: any) {
     this.req = req;
   }
   get done() {
     return this._state === "end";
   }
-  writeStatus(status: number) {
+  async writeStatus(status: number): Promise<void> {
     if (this._state !== "init") {
       throw new Error("incorrect response order");
     }
     this.status = status;
     this._state = "status_done";
   }
-  writeHeaders(headers: Headers) {
+  async writeHeaders(headers: Headers): Promise<void> {
     if (this._state !== "status_done") {
       throw new Error("incorrect response order");
     }
     this.headers = headers;
     this._state = "headers_done";
   }
-  writeBody(body: Uint8Array) {
+  async writeBody(body: Uint8Array | Reader): Promise<void> {
     if (this._state !== "headers_done") {
       throw new Error("incorrect response order");
     }
@@ -210,7 +221,7 @@ class Response {
       body: this.body
     });
   }
-  send(
+  async send(
     status: number,
     headers: Headers,
     body: string | Uint8Array
@@ -228,9 +239,9 @@ class Response {
     if (!headers.has("Content-Length")) {
       headers.append("Content-Length", body.byteLength.toString());
     }
-    this.writeStatus(status);
-    this.writeHeaders(headers);
-    this.writeBody(body);
+    await this.writeStatus(status);
+    await this.writeHeaders(headers);
+    await this.writeBody(body);
     return this.end();
   }
   empty(status: number): Promise<void> {
@@ -246,28 +257,36 @@ class Response {
     }
     const extname = path.extname(filePath);
     const contentType = getType(extname.slice(1));
-    let body = await stat(filePath)
-      .then(fileInfo => {
-        if (!fileInfo.isFile()) {
-          return null;
-        }
-        return readFile(filePath);
-      })
-      .catch(e => {
-        if (e instanceof DenoError && e.kind === ErrorKind.NotFound) {
-          return null;
-        }
+    let file;
+    try {
+      const fileInfo = await stat(filePath);
+      if (!fileInfo.isFile()) {
+        return;
+      }
+      const headers = new Headers();
+      headers.append("Content-Type", contentType);
+      let body;
+      if (transform) {
+        let body = await readFile(filePath);
+        body = transform(body);
+      } else {
+        body = await open(filePath);
+      }
+      await this.writeStatus(200);
+      await this.writeHeaders(headers);
+      await this.writeBody(body);
+      await this.end();
+    } catch (e) {
+      if (e instanceof DenoError && e.kind === ErrorKind.NotFound) {
+        return;
+      } else {
         throw e;
-      });
-    if (!body) {
-      return;
+      }
+    } finally {
+      if (file) {
+        close(file.rid);
+      }
     }
-    if (transform) {
-      body = transform(body);
-    }
-    const headers = new Headers();
-    headers.append("Content-Type", contentType);
-    return this.send(200, headers, body);
   }
 }
 
