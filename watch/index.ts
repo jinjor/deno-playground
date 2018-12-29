@@ -33,7 +33,7 @@ export default function watch(dir: string, options?: Options): Watcher {
   let abort = false;
   let timeout = null;
   async function* gen() {
-    let files = {};
+    let files = new Map();
     collect(files, dir, options.followSymlink, options.ignoreDotFiles);
     while (true) {
       await new Promise(resolve => {
@@ -47,9 +47,7 @@ export default function watch(dir: string, options?: Options): Watcher {
       files = newFiles;
       let end = Date.now();
       options.log &&
-        options.log(
-          `took ${end - start}ms to traverse ${Object.keys(files).length} files`
-        );
+        options.log(`took ${end - start}ms to traverse ${files.size} files`);
       if (changes) {
         yield changes;
       }
@@ -75,14 +73,14 @@ export default function watch(dir: string, options?: Options): Watcher {
 }
 
 async function detectChanges(
-  prev: any,
+  prev: Map<string, number>,
   dir: string,
   { followSymlink, ignoreDotFiles }: Options
-): Promise<[any, string[] | null]> {
-  const curr = {};
+): Promise<[Map<string, number>, string[] | null]> {
+  const curr = new Map();
   const changes = [];
   await walk(prev, curr, dir, followSymlink, ignoreDotFiles, changes);
-  for (let path in prev) {
+  for (let [path] of prev) {
     changes.push({
       action: "DELETED",
       file: path
@@ -92,8 +90,8 @@ async function detectChanges(
 }
 
 async function walk(
-  prev: any,
-  curr: any,
+  prev: Map<string, number>,
+  curr: Map<string, number>,
   dir: string,
   followSymlink: boolean,
   ignoreDotFiles: boolean,
@@ -120,25 +118,25 @@ async function walk(
       );
       continue;
     }
-    curr[f.path] = f.modified || f.created;
-    if (!prev[f.path]) {
+    curr.set(f.path, f.modified || f.created);
+    if (!prev.has(f.path)) {
       changes.push({
         action: "ADDED",
         file: f.path
       });
-    } else if (prev[f.path] < curr[f.path]) {
+    } else if (prev.get(f.path) < curr.get(f.path)) {
       changes.push({
         action: "MODIFIED",
         file: f.path
       });
     }
-    delete prev[f.path];
+    prev.delete(f.path);
   }
   await Promise.all(promises);
 }
 
 function collect(
-  all: any,
+  all: Map<string, number>,
   dir: string,
   followSymlink: boolean,
   ignoreDotFiles: boolean
@@ -161,6 +159,6 @@ function collect(
       collect(all, f.path, followSymlink, ignoreDotFiles);
       continue;
     }
-    all[f.path] = f.modified || f.created;
+    all.set(f.path, f.modified || f.created);
   }
 }
