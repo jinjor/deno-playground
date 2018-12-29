@@ -30,6 +30,7 @@ export async function main(
       await res.empty(200);
     }
   });
+  app.on("done", expressive.simpleLog());
   app.on("errorThrown", async (req, res) => {
     console.log(req.error);
     await res.empty(500);
@@ -38,18 +39,14 @@ export async function main(
     console.log("server listening on port " + port + ".");
     opn("http://localhost:" + port);
   });
-  watch(
-    watchDir,
-    async () => {
-      const code = await compile(main, distDir);
-      if (code === 0) {
-        shouldRefresh = true;
-      }
-    },
-    {
-      interval: 500
+  watch(watchDir, {
+    interval: 500
+  }).start(async () => {
+    const code = await compile(main, distDir);
+    if (code === 0) {
+      shouldRefresh = true;
     }
-  );
+  });
 }
 
 function compile(main: string, distDir: string): Promise<number> {
