@@ -1,5 +1,5 @@
 import { run } from "deno";
-import { expressive, path, opn, watch } from "package.ts";
+import { expressive, path, opn, watch, ws } from "package.ts";
 
 export async function main(
   main: string,
@@ -8,7 +8,6 @@ export async function main(
   watchDir: string,
   port: number
 ) {
-  let shouldRefresh = false;
   const app = new expressive.App();
   app.use(async req => {
     // console.log(req.method, req.url);
@@ -23,11 +22,43 @@ export async function main(
     });
   });
   app.get("/live", async (req, res) => {
-    if (shouldRefresh) {
-      shouldRefresh = false;
-      await res.empty(205);
-    } else {
-      await res.empty(200);
+    const [err, sock] = await ws.acceptWebSocket(req.raw);
+    if (err) {
+      console.error(err);
+      return;
+    }
+    console.log("socket connected!");
+    // (async () => {
+    //   for await (const ev of sock.receive()) {
+    //     if (typeof ev === "string") {
+    //       // text message
+    //       console.log("ws:Text", ev);
+    //       // const err = await sock.send(ev);
+    //       if (err) console.error(err);
+    //     } else if (ev instanceof Uint8Array) {
+    //       // binary message
+    //       console.log("ws:Binary", ev);
+    //     } else if (ws.isWebSocketPingEvent(ev)) {
+    //       const [_, body] = ev;
+    //       // ping
+    //       console.log("ws:Ping", body);
+    //     } else if (ws.isWebSocketCloseEvent(ev)) {
+    //       // close
+    //       const { code, reason } = ev;
+    //       console.log("ws:Close", code, reason);
+    //     }
+    //   }
+    // })();
+    for await (const _ of watch(watchDir, {
+      interval: 300
+    })) {
+      const code = await compile(main, distDir);
+      if (code === 0) {
+        const err = await sock.send("reload");
+        if (err) {
+          console.error(err);
+        }
+      }
     }
   });
   app.on("done", expressive.simpleLog());
@@ -38,14 +69,6 @@ export async function main(
   app.listen(port, () => {
     console.log("server listening on port " + port + ".");
     opn("http://localhost:" + port);
-  });
-  watch(watchDir, {
-    interval: 500
-  }).start(async () => {
-    const code = await compile(main, distDir);
-    if (code === 0) {
-      shouldRefresh = true;
-    }
   });
 }
 
@@ -62,32 +85,22 @@ function compile(main: string, distDir: string): Promise<number> {
 }
 
 const reloader = `
-  errorCount = 0;
-  function live() {
-    fetch("/live").then(res => {
-      // console.log(res.status);
-      if (res.status === 205) {
-        errorCount = 0;
-        location.reload();
-      } else if (res.status === 200) {
-        errorCount = 0;
-        setTimeout(live, 1000);
-      } else {
-        errorCount++;
-        if(errorCount > 10) {
-          console.log("stopped connection.");
-        } else {
-          setTimeout(live, 1000);
-        }
-      }
-    }).catch(e => {
-      errorCount++;
-      if(errorCount > 10) {
-        console.log("stopped connection.");
-      } else {
-        setTimeout(live, 1000);
-      }
-    });
-  }
-  live();
+  let errorCount = 0;
+  var connection = new WebSocket('ws://localhost:3000/live', ['soap', 'xmpp']);
+  connection.onopen = () => {
+    console.log("ws: opened.")
+  };
+  connection.onerror = error => {
+    console.log('ws: error ' + error);
+    errorCount++;
+    if(errorCount > 10) {
+      // console.log("stopped connection.");
+    }
+  };
+  connection.onmessage = function (e) {
+    if(e.data === "reload") {
+      errorCount = 0;
+      location.reload();
+    }
+  };
 `;
