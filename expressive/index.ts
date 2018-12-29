@@ -219,7 +219,7 @@ export class Request {
       headers.append("Content-Type", contentType);
       let body;
       if (transform) {
-        let body = await readFile(filePath);
+        body = await readFile(filePath);
         body = transform(body);
       } else {
         body = await open(filePath);
@@ -293,7 +293,7 @@ export function static_(dir: string): Middleware {
   return async req => {
     const filePath = path.join(dir, req.url.slice(1) || "index.html");
     try {
-      return req.file(filePath);
+      return await req.file(filePath);
     } catch (e) {
       if (e instanceof DenoError && e.kind === ErrorKind.NotFound) {
         return;

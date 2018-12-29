@@ -15,5 +15,5 @@ main =
                 [ text "Twitter" ]
             ]
         , li [] [ text "elm" ]
-        , li [] [ text "deno は「ディーノ（嘘）」" ]
+        , li [] [ text "deno は「デノ」" ]
         ]
