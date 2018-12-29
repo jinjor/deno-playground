@@ -2,6 +2,11 @@
   "compilerOptions": {
     "lib": ["es6", "es2018", "dom", "esnext.asynciterable"],
     "target": "es6",
-    "module": "commonjs"
+    "module": "commonjs",
+    "paths": {
+      "deno": ["deno.d.ts"],
+      "http://*": ["../../.deno/deps/http/*"],
+      "https://*": ["../../.deno/deps/https/*"]
+    }
   }
 }
