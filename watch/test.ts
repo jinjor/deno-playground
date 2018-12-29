@@ -1,4 +1,4 @@
-import { writeFile, env, mkdir, remove } from "deno";
+import { writeFile, env, mkdir, remove, removeAll } from "deno";
 import watch from "index.ts";
 import * as path from "https://deno.land/x/path/index.ts";
 import { test, assertEqual } from "https://deno.land/x/testing/testing.ts";
@@ -7,9 +7,9 @@ function randomName(pre = "", post = ""): string {
   return pre + Math.floor(Math.random() * 100000) + post;
 }
 let tmpDir = env().TMPDIR || env().TEMP || env().TMP || "/tmp";
-tmpDir = path.join(tmpDir, randomName("watch-test"));
 
 test(async function Watch() {
+  tmpDir = path.join(tmpDir, randomName("watch-test"));
   await mkdir(tmpDir);
   let result = [];
   const end = watch(tmpDir).start(changes => {
@@ -30,10 +30,12 @@ test(async function Watch() {
     assertEqual(result.length, 3);
   } finally {
     end();
+    await removeAll(tmpDir);
   }
 });
 
 test(async function WatchByGenerator() {
+  tmpDir = path.join(tmpDir, randomName("watch-test"));
   await mkdir(tmpDir);
   const watcher = watch(tmpDir);
   const filePath = path.join(tmpDir, randomName("", ".txt"));
@@ -43,4 +45,5 @@ test(async function WatchByGenerator() {
   for await (const changes of watcher) {
     watcher.end();
   }
+  await removeAll(tmpDir);
 });
