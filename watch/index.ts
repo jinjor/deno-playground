@@ -1,4 +1,11 @@
-import { readDir, readlink, lstat } from "deno";
+import {
+  readDir,
+  readlink,
+  lstatSync,
+  lstat,
+  readDirSync,
+  readlinkSync
+} from "deno";
 
 export interface Change {
   action: "ADDED" | "MODIFIED" | "DELETED";
@@ -26,7 +33,8 @@ export default function watch(dir: string, options?: Options): Watcher {
   let abort = false;
   let timeout = null;
   async function* gen() {
-    let [files] = await detectChanges({}, dir, options);
+    let files = {};
+    collect(files, dir, options.followSymlink, options.ignoreDotFiles);
     while (true) {
       await new Promise(resolve => {
         timeout = setTimeout(resolve, options.interval);
@@ -127,4 +135,32 @@ async function walk(
     delete prev[f.path];
   }
   await Promise.all(promises);
+}
+
+function collect(
+  all: any,
+  dir: string,
+  followSymlink: boolean,
+  ignoreDotFiles: boolean
+): void {
+  let files = [];
+  let dirInfo = lstatSync(dir);
+  if (dirInfo.isDirectory()) {
+    files = readDirSync(dir);
+  } else if (dirInfo.isSymlink()) {
+    if (followSymlink) {
+      const path = readlinkSync(dir);
+      files = readDirSync(path);
+    }
+  }
+  for (let f of files) {
+    if (ignoreDotFiles && f.name.charAt(0) === ".") {
+      continue;
+    }
+    if (f.isDirectory() || f.isSymlink()) {
+      collect(all, f.path, followSymlink, ignoreDotFiles);
+      continue;
+    }
+    all[f.path] = f.modified || f.created;
+  }
 }

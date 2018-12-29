@@ -20,7 +20,6 @@ test(async function Watch() {
     result = result.concat(changes);
   });
   try {
-    // await new Promise(resolve => setTimeout(resolve, 100));
     const filePath = path.join(tmpDir, randomFileName());
     await writeFile(filePath, new Uint8Array(0));
     await new Promise(resolve => setTimeout(resolve, 100));
