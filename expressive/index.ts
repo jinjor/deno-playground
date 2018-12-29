@@ -12,8 +12,8 @@ import { path, http, color } from "package.ts";
 
 type Method = "HEAD" | "OPTIONS" | "GET" | "POST" | "PUT" | "DELETE" | "PATCH";
 type Next = () => Promise<void>;
-type Handle = (req: Request, next: Next) => Promise<void>;
-type Middleware = Handle | PathHandler;
+type Handler = (req: Request, next: Next) => Promise<void>;
+type Middleware = Handler | PathHandler;
 type PathMatcher = (pattern: string) => (path: string) => any;
 
 export const simplePathMatcher: PathMatcher = _pattern => {
@@ -60,7 +60,7 @@ export interface PathHandler {
   handle: Function;
 }
 interface EventHandlers {
-  [key: string]: Handle;
+  [key: string]: Handler;
 }
 
 const defaultEventHandlers: EventHandlers = {
@@ -260,6 +260,8 @@ async function runMiddleware(
         req.context.matchedPattern = m.pattern;
         req.params = params;
         await m.handle(req);
+      } else {
+        next();
       }
     }
   } else {
@@ -337,7 +339,7 @@ export const bodyParser = {
     };
   }
 };
-export function simpleLog(): Handle {
+export function simpleLog(): Handler {
   return async (req, next) => {
     await next();
     const res = req.response;

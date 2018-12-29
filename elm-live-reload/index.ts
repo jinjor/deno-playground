@@ -10,9 +10,7 @@ export async function main(
 ) {
   let shouldRefresh = false;
   const app = new expressive.App();
-  app.use(async req => {
-    // console.log(req.method, req.url);
-  });
+  // app.use(expressive.simpleLog());
   app.use(expressive.static_("./public"));
   app.use(expressive.static_(distDir));
   app.use(expressive.bodyParser.json());
@@ -30,7 +28,6 @@ export async function main(
       await req.empty(200);
     }
   });
-  app.on("done", expressive.simpleLog());
   app.on("errorThrown", async req => {
     console.log(req.error);
     await req.empty(500);
