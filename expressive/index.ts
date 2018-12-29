@@ -79,9 +79,6 @@ const defaultEventHandlers: EventHandlers = {
   bodyNotJson: async (req, res) => {
     await res.empty(400);
   },
-  responseNotDone: async (req, res) => {
-    await res.end();
-  },
   done: async (req, res) => {}
 };
 
@@ -179,48 +176,9 @@ export class Request {
 }
 
 class Response {
-  private req;
-  private _state = "init";
-  status: number;
-  headers: Headers;
-  body: Uint8Array | Reader;
-  constructor(req: any) {
-    this.req = req;
-  }
-  get done() {
-    return this._state === "end";
-  }
-  async writeStatus(status: number): Promise<void> {
-    if (this._state !== "init") {
-      throw new Error("incorrect response order");
-    }
-    this.status = status;
-    this._state = "status_done";
-  }
-  async writeHeaders(headers: Headers): Promise<void> {
-    if (this._state !== "status_done") {
-      throw new Error("incorrect response order");
-    }
-    this.headers = headers;
-    this._state = "headers_done";
-  }
-  async writeBody(body: Uint8Array | Reader): Promise<void> {
-    if (this._state !== "headers_done") {
-      throw new Error("incorrect response order");
-    }
-    this.body = body;
-  }
-  end(): Promise<void> {
-    if (this._state !== "headers_done") {
-      throw new Error("incorrect response order");
-    }
-    this._state = "end";
-    return this.req.respond({
-      status: this.status,
-      headers: this.headers,
-      body: this.body
-    });
-  }
+  done = false;
+  res;
+  constructor(private req: any) {}
   async send(
     status: number,
     headers: Headers,
@@ -239,10 +197,9 @@ class Response {
     if (!headers.has("Content-Length")) {
       headers.append("Content-Length", body.byteLength.toString());
     }
-    await this.writeStatus(status);
-    await this.writeHeaders(headers);
-    await this.writeBody(body);
-    return this.end();
+    this.res = { status, headers, body };
+    this.done = true;
+    await this.req.respond(this.res);
   }
   empty(status: number): Promise<void> {
     return this.send(status, new Headers(), "");
@@ -272,10 +229,7 @@ class Response {
       } else {
         body = await open(filePath);
       }
-      await this.writeStatus(200);
-      await this.writeHeaders(headers);
-      await this.writeBody(body);
-      await this.end();
+      await this.send(200, headers, body);
     } catch (e) {
       if (e instanceof DenoError && e.kind === ErrorKind.NotFound) {
         return;
@@ -377,7 +331,7 @@ export const bodyParser = {
   }
 };
 export function simpleLog(options = { verbose: false }): Handle<void> {
-  return async (req, res) => {
+  return async (req, { res }) => {
     if (!res.status) {
       console.log(req.method, req.url);
     } else if (res.status >= 500) {
