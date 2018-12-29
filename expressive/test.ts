@@ -5,6 +5,7 @@ import {
 } from "https://deno.land/x/testing/testing.ts";
 import { Request, simplePathMatcher } from "index.ts";
 import { getType } from "mime.ts";
+import { throws } from "../assertion/assertion.ts";
 
 test(function parse_url() {
   const req = new Request({
@@ -35,19 +36,9 @@ test(function pathMatcher() {
   assertEqual(simplePathMatcher("/{a}")("/foo").a, "foo");
   assertEqual(simplePathMatcher("/{a}/foo/{xxx}")("/34/foo/1").a, "34");
   assertEqual(simplePathMatcher("/{a}/foo/{xxx}")("/34/foo/1").xxx, "1");
-  let ok = true;
-  try {
-    simplePathMatcher("//");
-    ok = false;
-  } catch (e) {}
-  assert(ok);
-  try {
-    simplePathMatcher("/{}");
-    ok = false;
-  } catch (e) {}
-  assert(ok);
-  try {
-    simplePathMatcher("/{x}/{x}");
-    ok = false;
-  } catch (e) {}
+  for (let v of ["//", "/{}", "/{x}/{x}"]) {
+    throws(() => {
+      simplePathMatcher(v);
+    });
+  }
 });

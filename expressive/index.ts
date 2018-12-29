@@ -9,9 +9,9 @@ type PathMatcher = (pattern: string) => (path: string) => any;
 
 export const simplePathMatcher: PathMatcher = _pattern => {
   const pattern = _pattern.split("/");
+  const names = new Set();
   for (let i = 0; i < pattern.length; i++) {
     const p = pattern[i];
-    const names = new Set();
     if (p[0] === "{" && p[p.length - 1] === "}") {
       const name = p.slice(1, -1).trim();
       if (!name) {
