@@ -73,7 +73,7 @@ const defaultEventHandlers: EventHandlers = {
   fileNotFound: async req => {
     await req.empty(404);
   },
-  bodyNotJson: async req => {
+  badBody: async req => {
     await req.empty(400);
   },
   done: async req => {}
@@ -304,7 +304,7 @@ export function static_(dir: string): Middleware {
   };
 }
 export const bodyParser = {
-  json: function bodyParser(): Middleware {
+  json(): Middleware {
     return async req => {
       if (req.headers.get("Content-Type") === "application/json") {
         try {
@@ -313,7 +313,39 @@ export const bodyParser = {
           req.data = JSON.parse(text);
         } catch (e) {
           req.error = e;
-          return "bodyNotJson";
+          return "badBody";
+        }
+      }
+    };
+  },
+  urlencoded(): Middleware {
+    return async req => {
+      if (
+        req.headers.get("Content-Type") === "application/x-www-form-urlencoded"
+      ) {
+        try {
+          const body = await req.body();
+          const text = new TextDecoder().decode(body);
+          const data = {};
+          for (let s of text.split("&")) {
+            const result = /^(.+?)=(.*)$/.exec(s);
+            if (result.length < 3) {
+              continue;
+            }
+            const key = decodeURIComponent(result[1].replace("+", " "));
+            const value = decodeURIComponent(result[2].replace("+", " "));
+            if (Array.isArray(data[key])) {
+              data[key] = [...data[key], value];
+            } else if (data[key]) {
+              data[key] = [data[key], value];
+            } else {
+              data[key] = value;
+            }
+          }
+          req.data = data;
+        } catch (e) {
+          req.error = e;
+          return "badBody";
         }
       }
     };
