@@ -7,8 +7,9 @@ const mainFile = parsedArgs._[1];
 const indexHtml = parsedArgs._[2];
 const port = parsedArgs.p || parsedArgs.port || 3000;
 const help = parsedArgs.h || parsedArgs.help;
+const srcDir = "./src";
 const distDir = "./elm-stuff/elm-live-reload";
-const watchDir = "./src";
+const publicDir = "./public";
 if (help) {
   showUsage();
   exit(0);
@@ -25,4 +26,5 @@ function showUsage() {
   );
   console.log();
 }
-main(mainFile, indexHtml, distDir, watchDir, port);
+
+main(mainFile, indexHtml, srcDir, distDir, publicDir, port);

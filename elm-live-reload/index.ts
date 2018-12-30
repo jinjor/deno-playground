@@ -4,14 +4,15 @@ import { expressive, path, opn, watch } from "package.ts";
 export async function main(
   main: string,
   index: string,
+  srcDir: string,
   distDir: string,
-  watchDir: string,
+  publicDir: string,
   port: number
 ) {
   let shouldRefresh = false;
   const app = new expressive.App();
   app.use(expressive.simpleLog());
-  app.use(expressive.static_("./public"));
+  app.use(expressive.static_(publicDir));
   app.use(expressive.static_(distDir));
   app.use(expressive.bodyParser.json());
   app.get("/", async (req, res) => {
@@ -32,14 +33,22 @@ export async function main(
   const server = await app.listen(port);
   console.log("server listening on port " + server.port + ".");
   opn("http://localhost:" + port);
-  for await (let _ of watch(watchDir, {
+  watch(srcDir, {
     interval: 500
-  })) {
+  }).start(async _ => {
     const code = await compile(main, distDir);
     if (code === 0) {
       shouldRefresh = true;
     }
-  }
+  });
+  watch(publicDir, {
+    interval: 500
+  }).start(async _ => {
+    const code = await compile(main, distDir);
+    if (code === 0) {
+      shouldRefresh = true;
+    }
+  });
 }
 
 function compile(main: string, distDir: string): Promise<number> {
