@@ -10,7 +10,7 @@ export async function main(
 ) {
   let shouldRefresh = false;
   const app = new expressive.App();
-  // app.use(expressive.simpleLog());
+  app.use(expressive.simpleLog());
   app.use(expressive.static_("./public"));
   app.use(expressive.static_(distDir));
   app.use(expressive.bodyParser.json());

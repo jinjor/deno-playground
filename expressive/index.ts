@@ -6,8 +6,11 @@ import { transformAllString } from "io-util.ts";
 type Method = "HEAD" | "OPTIONS" | "GET" | "POST" | "PUT" | "DELETE" | "PATCH";
 type Next = () => Promise<void>;
 type Handler = (req: Request, res: Response, next: Next) => Promise<void>;
+type EndHandler = (req: Request, res: Response) => Promise<void>;
 type Middleware = Handler | PathHandler;
-type PathMatcher = (pattern: string) => (path: string) => any;
+type Query = { [key: string]: string | string[] };
+type Params = { [key: string]: string };
+type PathMatcher = (pattern: string) => (path: string) => Params;
 
 export const simplePathMatcher: PathMatcher = _pattern => {
   const pattern = _pattern.split("/");
@@ -50,10 +53,10 @@ export interface PathHandler {
   method: Method;
   pattern: string;
   match: (path: string) => any;
-  handle: Function;
+  handle: EndHandler;
 }
 interface EventHandlers {
-  [key: string]: (req: Request, res: Response) => Promise<void>;
+  [key: string]: EndHandler;
 }
 
 const defaultEventHandlers: EventHandlers = {
@@ -65,7 +68,6 @@ const defaultEventHandlers: EventHandlers = {
 export class App {
   middlewares: Middleware[] = [];
   eventHandlers = defaultEventHandlers;
-  constructor() {}
   use(m: Middleware) {
     this.middlewares.push(m);
   }
@@ -104,7 +106,7 @@ export class App {
       }
     };
   }
-  private addPathHandler(method: Method, pattern: string, handle: Function) {
+  private addPathHandler(method: Method, pattern: string, handle: EndHandler) {
     this.middlewares.push({
       method,
       pattern,
@@ -112,19 +114,19 @@ export class App {
       handle
     });
   }
-  get(pattern, handle: Function): void {
+  get(pattern, handle: EndHandler): void {
     this.addPathHandler("GET", pattern, handle);
   }
-  post(pattern, handle: Function): void {
+  post(pattern, handle: EndHandler): void {
     this.addPathHandler("POST", pattern, handle);
   }
-  put(pattern, handle: Function): void {
+  put(pattern, handle: EndHandler): void {
     this.addPathHandler("PUT", pattern, handle);
   }
-  patch(pattern, handle: Function): void {
+  patch(pattern, handle: EndHandler): void {
     this.addPathHandler("PATCH", pattern, handle);
   }
-  delete(pattern, handle: Function): void {
+  delete(pattern, handle: EndHandler): void {
     this.addPathHandler("DELETE", pattern, handle);
   }
 }
@@ -144,11 +146,11 @@ export class Request {
   }
   path: string;
   search: string;
-  query: { [key: string]: string | string[] };
-  params: { [key: string]: string };
+  query: Query;
+  params: Params;
   data: any;
   error?: Error;
-  context: any = {};
+  extra: any = {};
   constructor(public raw) {
     const url = new URL("http://a.b" + raw.url);
     this.path = url.pathname;
@@ -171,7 +173,6 @@ class Response {
   status = 200;
   headers = new Headers();
   body?: string | Uint8Array | Reader;
-  constructor() {}
   toHttpResponse(): http.Response {
     let { status = 200, headers, body = new Uint8Array() } = this;
     if (typeof body === "string") {
@@ -245,9 +246,9 @@ async function runMiddleware(
     } else {
       const params = m.match(req.url);
       if (params) {
-        req.context.matchedPattern = m.pattern;
+        req.extra.matchedPattern = m.pattern;
         req.params = params;
-        await m.handle(req);
+        await m.handle(req, res);
       } else {
         next();
       }
@@ -281,7 +282,6 @@ export const bodyParser = {
           const body = await req.body();
           const text = new TextDecoder().decode(body);
           req.data = JSON.parse(text);
-          console.log(req.data);
         } catch (e) {
           res.status = 400;
           req.error = e;
