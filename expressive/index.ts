@@ -1,18 +1,12 @@
-import {
-  stat,
-  readFile,
-  open,
-  DenoError,
-  ErrorKind,
-  close,
-  Reader
-} from "deno";
+import { stat, open, DenoError, ErrorKind, close, Reader } from "deno";
 import { getType } from "mime.ts";
 import { path, http, color } from "package.ts";
+import { transformAllString } from "io-util.ts";
 
 type Method = "HEAD" | "OPTIONS" | "GET" | "POST" | "PUT" | "DELETE" | "PATCH";
-type Handle<T> = (req: Request) => Promise<T>;
-type Middleware = (Handle<Return>) | PathHandler;
+type Next = () => Promise<void>;
+type Handler = (req: Request, next: Next) => Promise<void>;
+type Middleware = Handler | PathHandler;
 type PathMatcher = (pattern: string) => (path: string) => any;
 
 export const simplePathMatcher: PathMatcher = _pattern => {
@@ -56,31 +50,37 @@ export interface PathHandler {
   method: Method;
   pattern: string;
   match: (path: string) => any;
-  handle: Handle<Return>;
+  handle: Function;
 }
-type Return = string | void;
 interface EventHandlers {
-  [key: string]: Handle<Return>;
+  [key: string]: (req: Request) => Promise<void>;
 }
 
 const defaultEventHandlers: EventHandlers = {
-  errorThrown: async req => {
+  unexpectedError: async req => {
     await req.empty(500);
-  },
-  middlewareNotMatched: async req => {
-    await req.empty(404);
-  },
-  fileNotFound: async req => {
-    await req.empty(404);
-  },
-  badBody: async req => {
-    await req.empty(400);
-  },
-  done: async req => {}
+  }
 };
 
 export class App {
-  middlewares: Middleware[] = [];
+  middlewares: Middleware[] = [
+    async (req, next) => {
+      let unexpectedError = false;
+      try {
+        await next();
+      } catch (e) {
+        req.error = e;
+        unexpectedError = true;
+      }
+      if (req.error) {
+        if (unexpectedError) {
+          await this.eventHandlers.unexpectedError(req);
+        } else {
+          await req.empty(req.response.status || 500);
+        }
+      }
+    }
+  ];
   eventHandlers = defaultEventHandlers;
   constructor() {}
   use(m: Middleware) {
@@ -97,7 +97,7 @@ export class App {
       callback(port);
       for await (const raw of s) {
         const req = new Request(raw);
-        await handleRequest(req, this.middlewares, this.eventHandlers);
+        await runMiddlewares(this.middlewares, req);
       }
     })();
     return {
@@ -106,11 +106,7 @@ export class App {
       }
     };
   }
-  private addPathHandler(
-    method: Method,
-    pattern: string,
-    handle: Handle<Return>
-  ) {
+  private addPathHandler(method: Method, pattern: string, handle: Function) {
     this.middlewares.push({
       method,
       pattern,
@@ -118,19 +114,19 @@ export class App {
       handle
     });
   }
-  get(pattern, handle: Handle<Return>): void {
+  get(pattern, handle: Function): void {
     this.addPathHandler("GET", pattern, handle);
   }
-  post(pattern, handle: Handle<Return>): void {
+  post(pattern, handle: Function): void {
     this.addPathHandler("POST", pattern, handle);
   }
-  put(pattern, handle: Handle<Return>): void {
+  put(pattern, handle: Function): void {
     this.addPathHandler("PUT", pattern, handle);
   }
-  patch(pattern, handle: Handle<Return>): void {
+  patch(pattern, handle: Function): void {
     this.addPathHandler("PATCH", pattern, handle);
   }
-  delete(pattern, handle: Handle<Return>): void {
+  delete(pattern, handle: Function): void {
     this.addPathHandler("DELETE", pattern, handle);
   }
 }
@@ -146,7 +142,7 @@ export class Request {
     return this.raw.headers;
   }
   get body(): () => Promise<Uint8Array> {
-    return this.raw.body;
+    return this.raw.body.bind(this.raw);
   }
   path: string;
   search: string;
@@ -187,15 +183,18 @@ export class Request {
     this.response = { status, headers, body };
     await this.raw.respond(this.response);
   }
-  empty(status: number): Promise<void> {
-    return this.send(status, new Headers(), "");
+  async empty(status: number): Promise<void> {
+    await this.send(status, new Headers(), "");
   }
-  json(json: any): Promise<void> {
+  async json(json: any): Promise<void> {
     const headers = new Headers();
     headers.append("Content-Type", "application/json");
-    return this.send(200, headers, JSON.stringify(json));
+    await this.send(200, headers, JSON.stringify(json));
   }
-  async file(filePath: string, transform?: Function): Promise<void> {
+  async file(
+    filePath: string,
+    transform?: (src: string) => string
+  ): Promise<void> {
     const notModified = false;
     if (notModified) {
       return this.empty(304);
@@ -210,12 +209,9 @@ export class Request {
       }
       const headers = new Headers();
       headers.append("Content-Type", contentType);
-      let body;
+      let body: Reader = await open(filePath);
       if (transform) {
-        body = await readFile(filePath);
-        body = transform(body);
-      } else {
-        body = await open(filePath);
+        body = transformAllString(transform)(body);
       }
       await this.send(200, headers, body);
     } finally {
@@ -226,70 +222,47 @@ export class Request {
   }
 }
 
-async function handleRequest(
+async function runMiddlewares(ms: Middleware[], req: Request): Promise<void> {
+  if (ms.length) {
+    const [m, ...rest] = ms;
+    await runMiddleware(m, req, () => {
+      return runMiddlewares(rest, req);
+    });
+  }
+}
+async function runMiddleware(
+  m: Middleware,
   req: Request,
-  middlewares: Middleware[],
-  eventHandlers: EventHandlers
-) {
-  let event: Return;
-  try {
-    event = await runMiddlewares(middlewares, req);
-    if (!req.response) {
-      event = "middlewareNotMatched";
-    }
-  } catch (e) {
-    req.error = e;
-    if (e instanceof DenoError && e.kind === ErrorKind.NotFound) {
-      event = "fileNotFound";
-    } else {
-      event = "errorThrown";
-    }
-  }
-  if (event) {
-    const f = eventHandlers[event];
-    if (f) {
-      await f(req);
-    }
-  }
-  if (!req.response) {
-    await eventHandlers.responseNotDone(req);
-  }
-  await eventHandlers.done(req);
-}
-async function runMiddlewares(ms: Middleware[], req: Request): Promise<Return> {
-  for (let m of ms) {
-    const flag = await runMiddleware(m, req);
-    if (req.response) {
-      return flag;
-    }
-  }
-}
-async function runMiddleware(m: Middleware, req: Request): Promise<Return> {
+  next: Next
+): Promise<void> {
   if (isPathHandler(m)) {
     if (m.method !== req.method) {
-      return;
-    }
-    const params = m.match(req.url);
-    if (params) {
-      req.context.matchedPattern = m.pattern;
-      req.params = params;
-      return m.handle(req);
+      next();
+    } else {
+      const params = m.match(req.url);
+      if (params) {
+        req.context.matchedPattern = m.pattern;
+        req.params = params;
+        await m.handle(req);
+      } else {
+        next();
+      }
     }
   } else {
-    return m(req);
+    await m(req, next);
   }
 }
 function isPathHandler(m: Middleware): m is PathHandler {
   return typeof m !== "function";
 }
 export function static_(dir: string): Middleware {
-  return async req => {
+  return async (req, next) => {
     const filePath = path.join(dir, req.url.slice(1) || "index.html");
     try {
-      return await req.file(filePath);
+      await req.file(filePath);
     } catch (e) {
       if (e instanceof DenoError && e.kind === ErrorKind.NotFound) {
-        return;
+        await next();
       } else {
         throw e;
       }
@@ -298,21 +271,24 @@ export function static_(dir: string): Middleware {
 }
 export const bodyParser = {
   json(): Middleware {
-    return async req => {
+    return async (req, next) => {
       if (req.headers.get("Content-Type") === "application/json") {
         try {
           const body = await req.body();
           const text = new TextDecoder().decode(body);
           req.data = JSON.parse(text);
+          console.log(req.data);
         } catch (e) {
+          req.response.status = 400;
           req.error = e;
-          return "badBody";
+          return;
         }
       }
+      await next();
     };
   },
   urlencoded(): Middleware {
-    return async req => {
+    return async (req, next) => {
       if (
         req.headers.get("Content-Type") === "application/x-www-form-urlencoded"
       ) {
@@ -337,17 +313,20 @@ export const bodyParser = {
           }
           req.data = data;
         } catch (e) {
+          req.response.status = 400;
           req.error = e;
-          return "badBody";
+          return;
         }
       }
+      await next();
     };
   }
 };
-export function simpleLog(options = { verbose: false }): Handle<void> {
-  return async req => {
+export function simpleLog(): Handler {
+  return async (req, next) => {
+    await next();
     const res = req.response;
-    if (!res.status) {
+    if (!res) {
       console.log(req.method, req.url);
     } else if (res.status >= 500) {
       console.log(color.red(res.status + ""), req.method, req.url);

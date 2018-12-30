@@ -2,6 +2,7 @@ import * as expressive from "../index.ts";
 
 const port = 3000;
 const app = new expressive.App();
+app.use(expressive.simpleLog());
 app.use(expressive.static_("./public"));
 app.use(expressive.bodyParser.json());
 app.get("/api/todos", async req => {
@@ -13,12 +14,11 @@ app.post("/api/todos", async req => {
     name: req.data.name
   };
   todos.push(todo);
-  return req.json(todo);
+  await req.json(todo);
 });
 app.get("/api/todos/{id}", async req => {
-  return req.json(todos[req.params.id]);
+  await req.json(todos[req.params.id]);
 });
-app.on("done", expressive.simpleLog());
 app.listen(port, p => {
   console.log("app listening on port " + p);
 });
