@@ -9,7 +9,7 @@ import {
 } from "deno";
 import { getType } from "mime.ts";
 import { path, http, color } from "package.ts";
-import { transformAllString, closeOnEOF } from "io-util.ts";
+import { transformAllString } from "io-util.ts";
 
 type Method = "HEAD" | "OPTIONS" | "GET" | "POST" | "PUT" | "DELETE" | "PATCH";
 type Next = () => Promise<void>;
