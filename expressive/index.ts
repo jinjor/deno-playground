@@ -1,14 +1,7 @@
-import {
-  stat,
-  readFile,
-  open,
-  DenoError,
-  ErrorKind,
-  close,
-  Reader
-} from "deno";
+import { stat, open, DenoError, ErrorKind, close, Reader } from "deno";
 import { getType } from "mime.ts";
 import { path, http, color } from "package.ts";
+import { transformAllString } from "io-util.ts";
 
 type Method = "HEAD" | "OPTIONS" | "GET" | "POST" | "PUT" | "DELETE" | "PATCH";
 type Next = () => Promise<void>;
@@ -199,15 +192,18 @@ export class Request {
     this.response = { status, headers, body };
     await this.raw.respond(this.response);
   }
-  empty(status: number): Promise<void> {
-    return this.send(status, new Headers(), "");
+  async empty(status: number): Promise<void> {
+    await this.send(status, new Headers(), "");
   }
-  json(json: any): Promise<void> {
+  async json(json: any): Promise<void> {
     const headers = new Headers();
     headers.append("Content-Type", "application/json");
-    return this.send(200, headers, JSON.stringify(json));
+    await this.send(200, headers, JSON.stringify(json));
   }
-  async file(filePath: string, transform?: Function): Promise<void> {
+  async file(
+    filePath: string,
+    transform?: (src: string) => string
+  ): Promise<void> {
     const notModified = false;
     if (notModified) {
       return this.empty(304);
@@ -222,12 +218,9 @@ export class Request {
       }
       const headers = new Headers();
       headers.append("Content-Type", contentType);
-      let body;
+      let body: Reader = await open(filePath);
       if (transform) {
-        body = await readFile(filePath);
-        body = transform(body);
-      } else {
-        body = await open(filePath);
+        body = transformAllString(transform)(body);
       }
       await this.send(200, headers, body);
     } finally {

@@ -15,8 +15,7 @@ export async function main(
   app.use(expressive.static_(distDir));
   app.use(expressive.bodyParser.json());
   app.get("/", async req => {
-    await req.file(index, data => {
-      const html = new TextDecoder().decode(data);
+    await req.file(index, html => {
       return html.replace("</head>", `<script>${reloader}</script></head>`);
     });
   });
