@@ -9,7 +9,7 @@ import {
 } from "deno";
 import { getType } from "mime.ts";
 import { path, http, color } from "package.ts";
-import { transformAllString, hookEOF } from "io-util.ts";
+import { transformAllString, closeOnEOF } from "io-util.ts";
 
 type Method = "HEAD" | "OPTIONS" | "GET" | "POST" | "PUT" | "DELETE" | "PATCH";
 type Next = () => Promise<void>;
@@ -217,12 +217,9 @@ class Response {
       }
       this.headers.append("Content-Type", contentType);
       file = await open(filePath);
+      // turn on to check leak;
       // console.log(await resources());
-      let body = hookEOF(file, () => {
-        if (file) {
-          file.close();
-        }
-      });
+      let body: Reader = closeOnEOF(file);
       if (transform) {
         body = transformAllString(transform)(body);
       }

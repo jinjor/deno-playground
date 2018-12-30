@@ -1,4 +1,4 @@
-import { Reader, Buffer, toAsyncIterator } from "deno";
+import { Reader, ReadCloser, Buffer, toAsyncIterator } from "deno";
 
 export function transformAllString(
   f: (src: string) => string
@@ -22,6 +22,21 @@ export function transformAll(
       return targetBuf.read(p);
     }
   });
+}
+
+export function closeOnEOF(r: ReadCloser): ReadCloser {
+  return {
+    read: async (p: Uint8Array) => {
+      const res = await r.read(p);
+      if (res.eof) {
+        r.close();
+      }
+      return res;
+    },
+    close() {
+      r.close();
+    }
+  };
 }
 
 export function hookEOF(r: Reader, callback: () => void): Reader {
