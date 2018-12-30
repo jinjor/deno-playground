@@ -1,5 +1,7 @@
-document.getElementById("add").addEventListener("click", () => {
+document.getElementById("add").addEventListener("submit", e => {
+  e.preventDefault();
   const value = document.getElementById("input").value;
+  document.getElementById("input").value = "";
   fetch("/api/todos", {
     method: "POST",
     headers: {
@@ -9,9 +11,22 @@ document.getElementById("add").addEventListener("click", () => {
     body: JSON.stringify({
       name: value
     })
-  })
-    .then(res => res.json())
-    .then(todo => {
-      document.getElementById("list").innerHTML = `<li>${todo.name}</li>`;
-    });
+  }).then(reload);
 });
+document.getElementById("delete").addEventListener("click", e => {
+  fetch(`/api/todos/0`, {
+    method: "DELETE"
+  }).then(reload);
+});
+function reload() {
+  return fetch("/api/todos")
+    .then(res => res.json())
+    .then(todos => {
+      let s = "";
+      for (let todo of todos) {
+        s += `<li>${todo.name}</li>`;
+      }
+      document.getElementById("list").innerHTML = s;
+    });
+}
+reload();

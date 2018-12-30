@@ -1,4 +1,5 @@
 import * as expressive from "../index.ts";
+import { removeSync } from "deno";
 
 (async () => {
   const port = 3000;
@@ -18,7 +19,18 @@ import * as expressive from "../index.ts";
     await res.json(todo);
   });
   app.get("/api/todos/{id}", async (req, res) => {
-    await res.json(todos[req.params.id]);
+    if (todos[req.params.id]) {
+      await res.json(todos[req.params.id]);
+    } else {
+      res.status = 404;
+    }
+  });
+  app.delete("/api/todos/{id}", async (req, res) => {
+    if (todos[+req.params.id]) {
+      todos.splice(+req.params.id, 1);
+    } else {
+      res.status = 404;
+    }
   });
   const server = await app.listen(port);
   console.log("app listening on port " + server.port);
