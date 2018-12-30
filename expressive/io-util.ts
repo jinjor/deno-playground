@@ -24,6 +24,18 @@ export function transformAll(
   });
 }
 
+export function hookEOF(r: Reader, callback: () => void): Reader {
+  return {
+    read: async (p: Uint8Array) => {
+      const res = await r.read(p);
+      if (res.eof) {
+        setTimeout(callback, 0);
+      }
+      return res;
+    }
+  };
+}
+
 export async function readAll(r: Reader): Promise<Uint8Array> {
   const buf = new Buffer();
   for await (const chunk of toAsyncIterator(r)) {

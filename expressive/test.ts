@@ -7,6 +7,23 @@ import { Request, simplePathMatcher } from "index.ts";
 import { getType } from "mime.ts";
 import { throws } from "../assertion/assertion.ts";
 
+import { stat, open, resources, close, Reader } from "deno";
+
+test(async function closeTest() {
+  let file;
+  try {
+    console.log(await resources());
+    const file = await open("../README.md");
+    console.log(await resources());
+    await file.close();
+    console.log(await resources());
+  } finally {
+    if (file) {
+      await file.close();
+    }
+  }
+});
+
 test(function parse_url() {
   const req = new Request({
     url: "/files-tmb/1234/abc.png?key=val"

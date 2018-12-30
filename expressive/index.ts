@@ -1,7 +1,15 @@
-import { stat, open, DenoError, ErrorKind, close, Reader } from "deno";
+import {
+  stat,
+  open,
+  resources,
+  DenoError,
+  ErrorKind,
+  close,
+  Reader
+} from "deno";
 import { getType } from "mime.ts";
 import { path, http, color } from "package.ts";
-import { transformAllString } from "io-util.ts";
+import { transformAllString, hookEOF } from "io-util.ts";
 
 type Method = "HEAD" | "OPTIONS" | "GET" | "POST" | "PUT" | "DELETE" | "PATCH";
 type Next = () => Promise<void>;
@@ -208,15 +216,21 @@ class Response {
         return;
       }
       this.headers.append("Content-Type", contentType);
-      let body: Reader = await open(filePath);
+      file = await open(filePath);
+      // console.log(await resources());
+      let body = hookEOF(file, () => {
+        if (file) {
+          file.close();
+        }
+      });
       if (transform) {
         body = transformAllString(transform)(body);
       }
       this.status = 200;
       this.body = body;
-    } finally {
+    } catch (_) {
       if (file) {
-        close(file.rid);
+        file.close();
       }
     }
   }

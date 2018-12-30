@@ -1,4 +1,11 @@
-import { writeFile, mkdir, remove, removeAll, makeTempDir } from "deno";
+import {
+  writeFile,
+  mkdir,
+  remove,
+  removeAll,
+  makeTempDir,
+  resources
+} from "deno";
 import watch from "index.ts";
 import * as path from "https://deno.land/x/path/index.ts";
 import { test, assertEqual } from "https://deno.land/x/testing/testing.ts";
@@ -84,7 +91,11 @@ test(async function Benchmark() {
         const index = Math.floor(Math.random() * files.length);
         const fileName = files[index];
         if (fileName) {
-          await remove(fileName);
+          try {
+            await remove(fileName);
+          } catch (e) {
+            console.log(e);
+          }
         }
         files[index] = null;
       }
