@@ -33,22 +33,15 @@ export async function main(
   const server = await app.listen(port);
   console.log("server listening on port " + server.port + ".");
   opn("http://localhost:" + port);
-  watch(srcDir, {
+  const watcher = watch([srcDir, publicDir], {
     interval: 500
-  }).start(async _ => {
+  });
+  for await (let _ of watcher) {
     const code = await compile(main, distDir);
     if (code === 0) {
       shouldRefresh = true;
     }
-  });
-  watch(publicDir, {
-    interval: 500
-  }).start(async _ => {
-    const code = await compile(main, distDir);
-    if (code === 0) {
-      shouldRefresh = true;
-    }
-  });
+  }
 }
 
 function compile(main: string, distDir: string): Promise<number> {

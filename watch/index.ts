@@ -28,13 +28,21 @@ const defaultOptions = {
   log: null
 };
 
-export default function watch(dir: string, options?: Options): Watcher {
+export default function watch(
+  dirs: string | string[],
+  options?: Options
+): Watcher {
+  dirs = Array.isArray(dirs) ? dirs : [dirs];
   options = Object.assign({}, defaultOptions, options);
   let abort = false;
   let timeout = null;
   async function* gen() {
-    let files = {};
-    collect(files, dir, options.followSymlink, options.ignoreDotFiles);
+    const state = {};
+    for (let dir of dirs) {
+      let files = {};
+      collect(files, dir, options.followSymlink, options.ignoreDotFiles);
+      state[dir] = files;
+    }
     while (true) {
       await new Promise(resolve => {
         timeout = setTimeout(resolve, options.interval);
@@ -42,16 +50,21 @@ export default function watch(dir: string, options?: Options): Watcher {
       if (abort) {
         break;
       }
+      let allChanges = [];
       let start = Date.now();
-      const [newFiles, changes] = await detectChanges(files, dir, options);
-      files = newFiles;
+      let count = 0;
+      for (let dir in state) {
+        const files = state[dir];
+        const [newFiles, changes] = await detectChanges(files, dir, options);
+        state[dir] = newFiles;
+        allChanges = [...allChanges, ...changes];
+        count += Object.keys(files).length;
+      }
       let end = Date.now();
       options.log &&
-        options.log(
-          `took ${end - start}ms to traverse ${Object.keys(files).length} files`
-        );
-      if (changes) {
-        yield changes;
+        options.log(`took ${end - start}ms to traverse ${count} files`);
+      if (allChanges.length) {
+        yield allChanges;
       }
     }
   }
@@ -88,7 +101,7 @@ async function detectChanges(
       file: path
     });
   }
-  return [curr, changes.length ? changes : null];
+  return [curr, changes];
 }
 
 async function walk(
