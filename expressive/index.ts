@@ -4,12 +4,12 @@ import {
   resources,
   DenoError,
   ErrorKind,
-  close,
-  Reader
+  readFile,
+  Reader,
+  Closer
 } from "deno";
 import { getType } from "mime.ts";
 import { path, http, color } from "package.ts";
-import { transformAllString } from "io-util.ts";
 
 type Method = "HEAD" | "OPTIONS" | "GET" | "POST" | "PUT" | "DELETE" | "PATCH";
 type Next = () => Promise<void>;
@@ -95,17 +95,21 @@ export class App {
           req.error = e;
           unexpectedError = true;
         }
-        if (req.error) {
-          if (unexpectedError) {
-            await this.eventHandlers.unexpectedError(req, res);
-          } else {
-            if (!res.status) {
-              res.status = 500;
+        try {
+          if (req.error) {
+            if (unexpectedError) {
+              await this.eventHandlers.unexpectedError(req, res);
+            } else {
+              if (!res.status) {
+                res.status = 500;
+              }
             }
           }
+          await httpRequest.respond(res.toHttpResponse());
+        } finally {
+          res.close();
+          // console.log(await resources());
         }
-        await httpRequest.respond(res.toHttpResponse());
-        res.close();
       }
     })();
     return {
@@ -182,6 +186,7 @@ class Response {
   status = 200;
   headers = new Headers();
   body?: string | Uint8Array | Reader;
+  resources: Closer[] = [];
   toHttpResponse(): http.Response {
     let { status = 200, headers, body = new Uint8Array() } = this;
     if (typeof body === "string") {
@@ -193,8 +198,8 @@ class Response {
     return { status, headers, body };
   }
   close() {
-    if (this.body && (this.body as any).rid) {
-      close(this.body["rid"]);
+    for (let resource of this.resources) {
+      resource.close();
     }
   }
   async empty(status: number): Promise<void> {
@@ -215,27 +220,20 @@ class Response {
     }
     const extname = path.extname(filePath);
     const contentType = getType(extname.slice(1));
-    let file;
-    try {
-      const fileInfo = await stat(filePath);
-      if (!fileInfo.isFile()) {
-        return;
-      }
-      this.headers.append("Content-Type", contentType);
-      file = await open(filePath);
-      // turn on to check leak;
-      // console.log(await resources());
-      let body = file;
-      if (transform) {
-        body = transformAllString(transform)(body);
-      }
-      this.status = 200;
-      this.body = body;
-    } catch (e) {
-      if (file) {
-        file.close();
-      }
-      throw e;
+    const fileInfo = await stat(filePath);
+    if (!fileInfo.isFile()) {
+      return;
+    }
+    this.headers.append("Content-Type", contentType);
+    if (transform) {
+      const bytes = await readFile(filePath);
+      let str = new TextDecoder().decode(bytes);
+      str = transform(str);
+      this.body = new TextEncoder().encode(str);
+    } else {
+      const file = await open(filePath);
+      this.resources.push(file);
+      this.body = file;
     }
   }
 }
