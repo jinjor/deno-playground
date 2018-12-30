@@ -14,35 +14,32 @@ export async function main(
   app.use(expressive.static_("./public"));
   app.use(expressive.static_(distDir));
   app.use(expressive.bodyParser.json());
-  app.get("/", async req => {
-    await req.file(index, html => {
+  app.get("/", async (req, res) => {
+    await res.file(index, html => {
       return html.replace("</head>", `<script>${reloader}</script></head>`);
     });
   });
-  app.get("/live", async req => {
+  app.get("/live", async (req, res) => {
     if (shouldRefresh) {
       shouldRefresh = false;
-      await req.empty(205);
-    } else {
-      await req.empty(200);
+      res.status = 205;
     }
   });
-  app.on("unexpectedError", async req => {
+  app.on("unexpectedError", async (req, res) => {
     console.log(req.error);
-    await req.empty(500);
+    res.status = 500;
   });
-  app.listen(port, () => {
-    console.log("server listening on port " + port + ".");
-    opn("http://localhost:" + port);
-  });
-  watch(watchDir, {
+  const server = await app.listen(port);
+  console.log("server listening on port " + server.port + ".");
+  opn("http://localhost:" + port);
+  for await (let _ of watch(watchDir, {
     interval: 500
-  }).start(async () => {
+  })) {
     const code = await compile(main, distDir);
     if (code === 0) {
       shouldRefresh = true;
     }
-  });
+  }
 }
 
 function compile(main: string, distDir: string): Promise<number> {

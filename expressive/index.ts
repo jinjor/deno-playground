@@ -5,7 +5,7 @@ import { transformAllString } from "io-util.ts";
 
 type Method = "HEAD" | "OPTIONS" | "GET" | "POST" | "PUT" | "DELETE" | "PATCH";
 type Next = () => Promise<void>;
-type Handler = (req: Request, next: Next) => Promise<void>;
+type Handler = (req: Request, res: Response, next: Next) => Promise<void>;
 type Middleware = Handler | PathHandler;
 type PathMatcher = (pattern: string) => (path: string) => any;
 
@@ -53,34 +53,17 @@ export interface PathHandler {
   handle: Function;
 }
 interface EventHandlers {
-  [key: string]: (req: Request) => Promise<void>;
+  [key: string]: (req: Request, res: Response) => Promise<void>;
 }
 
 const defaultEventHandlers: EventHandlers = {
-  unexpectedError: async req => {
-    await req.empty(500);
+  unexpectedError: async (req, res) => {
+    await res.empty(500);
   }
 };
 
 export class App {
-  middlewares: Middleware[] = [
-    async (req, next) => {
-      let unexpectedError = false;
-      try {
-        await next();
-      } catch (e) {
-        req.error = e;
-        unexpectedError = true;
-      }
-      if (req.error) {
-        if (unexpectedError) {
-          await this.eventHandlers.unexpectedError(req);
-        } else {
-          await req.empty(req.response.status || 500);
-        }
-      }
-    }
-  ];
+  middlewares: Middleware[] = [];
   eventHandlers = defaultEventHandlers;
   constructor() {}
   use(m: Middleware) {
@@ -89,18 +72,33 @@ export class App {
   on(event: string, f: any) {
     this.eventHandlers[event] = f;
   }
-  listen(port: number, host, callback?) {
-    callback = typeof host === "function" ? host : callback || function() {};
-    host = typeof host === "string" ? host : "127.0.0.1";
+  async listen(port: number, host = "127.0.0.1") {
     const s = http.serve(`${host}:${port}`);
     (async () => {
-      callback(port);
-      for await (const raw of s) {
-        const req = new Request(raw);
-        await runMiddlewares(this.middlewares, req);
+      for await (const httpRequest of s) {
+        const req = new Request(httpRequest);
+        const res = new Response();
+        let unexpectedError = false;
+        try {
+          await runMiddlewares(this.middlewares, req, res);
+        } catch (e) {
+          req.error = e;
+          unexpectedError = true;
+        }
+        if (req.error) {
+          if (unexpectedError) {
+            await this.eventHandlers.unexpectedError(req, res);
+          } else {
+            if (!res.status) {
+              res.status = 500;
+            }
+          }
+        }
+        await httpRequest.respond(res.toHttpResponse());
       }
     })();
     return {
+      port,
       close() {
         throw new Error("cannot close for now");
       }
@@ -149,9 +147,8 @@ export class Request {
   query: { [key: string]: string | string[] };
   params: { [key: string]: string };
   data: any;
-  response: http.Response;
   error?: Error;
-  context: { [key: string]: any };
+  context: any = {};
   constructor(public raw) {
     const url = new URL("http://a.b" + raw.url);
     this.path = url.pathname;
@@ -167,29 +164,30 @@ export class Request {
       }
     }
     this.query = query;
-    this.context = {};
   }
-  async send(
-    status: number,
-    headers: Headers,
-    body: string | Uint8Array | Reader
-  ): Promise<void> {
+}
+
+class Response {
+  status = 200;
+  headers = new Headers();
+  body?: string | Uint8Array | Reader;
+  constructor() {}
+  toHttpResponse(): http.Response {
+    let { status = 200, headers, body = new Uint8Array() } = this;
     if (typeof body === "string") {
       body = new TextEncoder().encode(body);
       if (!headers.has("Content-Type")) {
         headers.append("Content-Type", "text/plain");
       }
     }
-    this.response = { status, headers, body };
-    await this.raw.respond(this.response);
+    return { status, headers, body };
   }
   async empty(status: number): Promise<void> {
-    await this.send(status, new Headers(), "");
+    this.status = status;
   }
   async json(json: any): Promise<void> {
-    const headers = new Headers();
-    headers.append("Content-Type", "application/json");
-    await this.send(200, headers, JSON.stringify(json));
+    this.headers.append("Content-Type", "application/json");
+    this.body = JSON.stringify(json);
   }
   async file(
     filePath: string,
@@ -197,7 +195,8 @@ export class Request {
   ): Promise<void> {
     const notModified = false;
     if (notModified) {
-      return this.empty(304);
+      this.status = 304;
+      return;
     }
     const extname = path.extname(filePath);
     const contentType = getType(extname.slice(1));
@@ -207,13 +206,13 @@ export class Request {
       if (!fileInfo.isFile()) {
         return;
       }
-      const headers = new Headers();
-      headers.append("Content-Type", contentType);
+      this.headers.append("Content-Type", contentType);
       let body: Reader = await open(filePath);
       if (transform) {
         body = transformAllString(transform)(body);
       }
-      await this.send(200, headers, body);
+      this.status = 200;
+      this.body = body;
     } finally {
       if (file) {
         close(file.rid);
@@ -222,17 +221,22 @@ export class Request {
   }
 }
 
-async function runMiddlewares(ms: Middleware[], req: Request): Promise<void> {
+async function runMiddlewares(
+  ms: Middleware[],
+  req: Request,
+  res: Response
+): Promise<void> {
   if (ms.length) {
     const [m, ...rest] = ms;
-    await runMiddleware(m, req, () => {
-      return runMiddlewares(rest, req);
+    await runMiddleware(m, req, res, () => {
+      return runMiddlewares(rest, req, res);
     });
   }
 }
 async function runMiddleware(
   m: Middleware,
   req: Request,
+  res: Response,
   next: Next
 ): Promise<void> {
   if (isPathHandler(m)) {
@@ -249,17 +253,17 @@ async function runMiddleware(
       }
     }
   } else {
-    await m(req, next);
+    await m(req, res, next);
   }
 }
 function isPathHandler(m: Middleware): m is PathHandler {
   return typeof m !== "function";
 }
 export function static_(dir: string): Middleware {
-  return async (req, next) => {
+  return async (req, res, next) => {
     const filePath = path.join(dir, req.url.slice(1) || "index.html");
     try {
-      await req.file(filePath);
+      await res.file(filePath);
     } catch (e) {
       if (e instanceof DenoError && e.kind === ErrorKind.NotFound) {
         await next();
@@ -271,7 +275,7 @@ export function static_(dir: string): Middleware {
 }
 export const bodyParser = {
   json(): Middleware {
-    return async (req, next) => {
+    return async (req, res, next) => {
       if (req.headers.get("Content-Type") === "application/json") {
         try {
           const body = await req.body();
@@ -279,7 +283,7 @@ export const bodyParser = {
           req.data = JSON.parse(text);
           console.log(req.data);
         } catch (e) {
-          req.response.status = 400;
+          res.status = 400;
           req.error = e;
           return;
         }
@@ -288,7 +292,7 @@ export const bodyParser = {
     };
   },
   urlencoded(): Middleware {
-    return async (req, next) => {
+    return async (req, res, next) => {
       if (
         req.headers.get("Content-Type") === "application/x-www-form-urlencoded"
       ) {
@@ -313,7 +317,7 @@ export const bodyParser = {
           }
           req.data = data;
         } catch (e) {
-          req.response.status = 400;
+          res.status = 400;
           req.error = e;
           return;
         }
@@ -323,9 +327,8 @@ export const bodyParser = {
   }
 };
 export function simpleLog(): Handler {
-  return async (req, next) => {
+  return async (req, res, next) => {
     await next();
-    const res = req.response;
     if (!res) {
       console.log(req.method, req.url);
     } else if (res.status >= 500) {
