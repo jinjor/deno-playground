@@ -24,7 +24,7 @@ export function transformAll(
   });
 }
 
-export function closeOnEOF(r: ReadCloser): ReadCloser {
+function closeOnEOF(r: ReadCloser): ReadCloser {
   return {
     read: async (p: Uint8Array) => {
       const res = await r.read(p);
@@ -39,7 +39,7 @@ export function closeOnEOF(r: ReadCloser): ReadCloser {
   };
 }
 
-export function hookEOF(r: Reader, callback: () => void): Reader {
+function hookEOF(r: Reader, callback: () => void): Reader {
   return {
     read: async (p: Uint8Array) => {
       const res = await r.read(p);

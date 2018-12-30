@@ -105,6 +105,7 @@ export class App {
           }
         }
         await httpRequest.respond(res.toHttpResponse());
+        res.close();
       }
     })();
     return {
@@ -191,6 +192,11 @@ class Response {
     }
     return { status, headers, body };
   }
+  close() {
+    if (this.body && (this.body as any).rid) {
+      close(this.body["rid"]);
+    }
+  }
   async empty(status: number): Promise<void> {
     this.status = status;
   }
@@ -219,7 +225,7 @@ class Response {
       file = await open(filePath);
       // turn on to check leak;
       // console.log(await resources());
-      let body: Reader = closeOnEOF(file);
+      let body = file;
       if (transform) {
         body = transformAllString(transform)(body);
       }
