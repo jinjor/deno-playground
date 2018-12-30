@@ -55,10 +55,10 @@ export default function watch(
       let count = 0;
       for (let dir in state) {
         const files = state[dir];
+        count += Object.keys(files).length;
         const [newFiles, changes] = await detectChanges(files, dir, options);
         state[dir] = newFiles;
         allChanges = [...allChanges, ...changes];
-        count += Object.keys(files).length;
       }
       let end = Date.now();
       options.log &&

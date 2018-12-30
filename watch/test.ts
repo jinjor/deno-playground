@@ -1,4 +1,4 @@
-import { writeFile, env, mkdir, remove, removeAll } from "deno";
+import { writeFile, mkdir, remove, removeAll, makeTempDir } from "deno";
 import watch from "index.ts";
 import * as path from "https://deno.land/x/path/index.ts";
 import { test, assertEqual } from "https://deno.land/x/testing/testing.ts";
@@ -6,11 +6,9 @@ import { test, assertEqual } from "https://deno.land/x/testing/testing.ts";
 function randomName(pre = "", post = ""): string {
   return pre + Math.floor(Math.random() * 100000) + post;
 }
-let tmpDir = env().TMPDIR || env().TEMP || env().TMP || "/tmp";
 
 test(async function Watch() {
-  tmpDir = path.join(tmpDir, randomName("watch-test"));
-  await mkdir(tmpDir);
+  const tmpDir = await makeTempDir();
   try {
     let result = [];
     const end = watch(tmpDir).start(changes => {
@@ -38,8 +36,7 @@ test(async function Watch() {
 });
 
 test(async function WatchByGenerator() {
-  tmpDir = path.join(tmpDir, randomName("watch-test"));
-  await mkdir(tmpDir);
+  const tmpDir = await makeTempDir();
   try {
     const watcher = watch(tmpDir);
     const filePath = path.join(tmpDir, randomName("", ".txt"));
@@ -55,8 +52,7 @@ test(async function WatchByGenerator() {
 });
 
 test(async function Benchmark() {
-  tmpDir = path.join(tmpDir, randomName("watch-test"));
-  await mkdir(tmpDir);
+  const tmpDir = await makeTempDir();
   try {
     const files = [];
     await generateManyFiles(tmpDir, files);
