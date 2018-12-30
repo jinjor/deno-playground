@@ -228,10 +228,11 @@ class Response {
       }
       this.status = 200;
       this.body = body;
-    } catch (_) {
+    } catch (e) {
       if (file) {
         file.close();
       }
+      throw e;
     }
   }
 }
