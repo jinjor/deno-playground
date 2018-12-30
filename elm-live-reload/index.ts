@@ -27,7 +27,7 @@ export async function main(
       await req.empty(200);
     }
   });
-  app.on("errorThrown", async req => {
+  app.on("unexpectedError", async req => {
     console.log(req.error);
     await req.empty(500);
   });

@@ -53,40 +53,31 @@ export interface PathHandler {
   handle: Function;
 }
 interface EventHandlers {
-  [key: string]: Handler;
+  [key: string]: (req: Request) => Promise<void>;
 }
 
 const defaultEventHandlers: EventHandlers = {
-  errorThrown: async req => {
+  unexpectedError: async req => {
     await req.empty(500);
-  },
-  middlewareNotMatched: async req => {
-    await req.empty(404);
-  },
-  fileNotFound: async req => {
-    await req.empty(404);
-  },
-  badBody: async req => {
-    await req.empty(400);
   }
 };
 
 export class App {
   middlewares: Middleware[] = [
     async (req, next) => {
+      let unexpectedError = false;
       try {
         await next();
-        if (req.error) {
-          await req.empty(500);
-        }
       } catch (e) {
-        // if (typeof e === "string") {
-        //   const handler = this.eventHandlers[e];
-        //   if (handler) {
-        //     await handler;
-        //   }
-        // }
-        await req.empty(500);
+        req.error = e;
+        unexpectedError = true;
+      }
+      if (req.error) {
+        if (unexpectedError) {
+          await this.eventHandlers.unexpectedError(req);
+        } else {
+          await req.empty(req.response.status || 500);
+        }
       }
     }
   ];
@@ -288,9 +279,8 @@ export const bodyParser = {
           req.data = JSON.parse(text);
           console.log(req.data);
         } catch (e) {
-          console.log(e);
+          req.response.status = 400;
           req.error = e;
-          // throw "badBody";
           return;
         }
       }
@@ -323,8 +313,8 @@ export const bodyParser = {
           }
           req.data = data;
         } catch (e) {
+          req.response.status = 400;
           req.error = e;
-          // throw "badBody";
           return;
         }
       }
