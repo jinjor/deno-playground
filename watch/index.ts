@@ -4,7 +4,8 @@ import {
   lstatSync,
   lstat,
   readDirSync,
-  readlinkSync
+  readlinkSync,
+  FileInfo
 } from "deno";
 
 export interface Change {
@@ -16,6 +17,8 @@ export interface Options {
   followSymlink?: boolean;
   ignoreDotFiles?: boolean;
   log?: Function;
+  test?: RegExp | string;
+  ignore?: RegExp | string;
 }
 export interface Watcher extends AsyncIterable<string[]> {
   start(callback: (changes: string[]) => void): () => void;
@@ -25,7 +28,9 @@ const defaultOptions = {
   interval: 1000,
   followSymlink: false,
   ignoreDotFiles: true,
-  log: null
+  log: null,
+  test: null,
+  ignore: null
 };
 
 export default function watch(
@@ -36,11 +41,12 @@ export default function watch(
   options = Object.assign({}, defaultOptions, options);
   let abort = false;
   let timeout = null;
+  const filter = makeFilter(options);
   async function* gen() {
     const state = {};
     for (let dir of dirs) {
       let files = {};
-      collect(files, dir, options.followSymlink, options.ignoreDotFiles);
+      collect(files, dir, options.followSymlink, filter);
       state[dir] = files;
     }
     while (true) {
@@ -56,7 +62,12 @@ export default function watch(
       for (let dir in state) {
         const files = state[dir];
         count += Object.keys(files).length;
-        const [newFiles, changes] = await detectChanges(files, dir, options);
+        const [newFiles, changes] = await detectChanges(
+          files,
+          dir,
+          options,
+          filter
+        );
         state[dir] = newFiles;
         allChanges = [...allChanges, ...changes];
       }
@@ -87,14 +98,40 @@ export default function watch(
   };
 }
 
+function makeFilter({ test, ignore, ignoreDotFiles }: Options) {
+  const testRegex = test
+    ? typeof test === "string"
+      ? new RegExp(test)
+      : test
+    : /.*/;
+  const ignoreRegex = ignore
+    ? typeof ignore === "string"
+      ? new RegExp(ignore)
+      : ignore
+    : /$^/;
+  return function filter(f: FileInfo) {
+    if (ignoreDotFiles && f.name.charAt(0) === ".") {
+      return false;
+    }
+    if (!testRegex.test(f.path)) {
+      return false;
+    }
+    if (ignoreRegex.test(f.path)) {
+      return false;
+    }
+    return true;
+  };
+}
+
 async function detectChanges(
   prev: any,
   dir: string,
-  { followSymlink, ignoreDotFiles }: Options
+  { followSymlink }: Options,
+  filter: (info: FileInfo) => boolean
 ): Promise<[any, string[] | null]> {
   const curr = {};
   const changes = [];
-  await walk(prev, curr, dir, followSymlink, ignoreDotFiles, changes);
+  await walk(prev, curr, dir, followSymlink, filter, changes);
   for (let path in prev) {
     changes.push({
       action: "DELETED",
@@ -109,7 +146,7 @@ async function walk(
   curr: any,
   dir: string,
   followSymlink: boolean,
-  ignoreDotFiles: boolean,
+  filter: (info: FileInfo) => boolean,
   changes: Change[]
 ): Promise<void> {
   let files = [];
@@ -124,13 +161,11 @@ async function walk(
   }
   const promises = [];
   for (let f of files) {
-    if (ignoreDotFiles && f.name.charAt(0) === ".") {
+    if (!filter(f)) {
       continue;
     }
     if (f.isDirectory() || f.isSymlink()) {
-      promises.push(
-        walk(prev, curr, f.path, followSymlink, ignoreDotFiles, changes)
-      );
+      promises.push(walk(prev, curr, f.path, followSymlink, filter, changes));
       continue;
     }
     curr[f.path] = f.modified || f.created;
@@ -154,7 +189,7 @@ function collect(
   all: any,
   dir: string,
   followSymlink: boolean,
-  ignoreDotFiles: boolean
+  filter: (f: FileInfo) => boolean
 ): void {
   let files = [];
   let dirInfo = lstatSync(dir);
@@ -167,11 +202,11 @@ function collect(
     }
   }
   for (let f of files) {
-    if (ignoreDotFiles && f.name.charAt(0) === ".") {
+    if (!filter(f)) {
       continue;
     }
     if (f.isDirectory() || f.isSymlink()) {
-      collect(all, f.path, followSymlink, ignoreDotFiles);
+      collect(all, f.path, followSymlink, filter);
       continue;
     }
     all[f.path] = f.modified || f.created;
