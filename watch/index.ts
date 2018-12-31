@@ -38,7 +38,7 @@ const defaultOptions = {
   interval: 1000,
   followSymlink: false,
   ignoreDotFiles: true,
-  log: function() {},
+  log: null,
   test: null,
   ignore: null
 };
@@ -49,30 +49,22 @@ export default function watch(
 ): Watcher {
   dirs = Array.isArray(dirs) ? dirs : [dirs];
   options = Object.assign({}, defaultOptions, options);
-  return new WatcherImpl(dirs, options);
-}
-
-class WatcherImpl implements AsyncIterable<Changes> {
-  private abort = false;
-  private timeout = null;
-  constructor(private dirs: string[], private options: Options) {}
-  [Symbol.asyncIterator]() {
-    return this.watch();
-  }
-  private async *watch() {
-    const { interval, followSymlink, log } = this.options;
-    const filter = makeFilter(this.options);
+  let abort = false;
+  let timeout = null;
+  const filter = makeFilter(options);
+  const log = options.log || function() {};
+  async function* gen() {
     const state = {};
-    for (let dir of this.dirs) {
+    for (let dir of dirs) {
       let files = {};
-      collect(files, dir, followSymlink, filter);
+      collect(files, dir, options.followSymlink, filter);
       state[dir] = files;
     }
     while (true) {
       await new Promise(resolve => {
-        this.timeout = setTimeout(resolve, interval);
+        timeout = setTimeout(resolve, options.interval);
       });
-      if (this.abort) {
+      if (abort) {
         break;
       }
       let changes = new Changes();
@@ -86,7 +78,7 @@ class WatcherImpl implements AsyncIterable<Changes> {
           files,
           newFiles,
           dir,
-          followSymlink,
+          options.followSymlink,
           filter,
           changes
         );
@@ -99,20 +91,23 @@ class WatcherImpl implements AsyncIterable<Changes> {
       }
     }
   }
-  start(callback: (changes: Changes) => void): () => void {
-    (async () => {
-      for await (const changes of this.watch()) {
-        callback(changes);
+  return {
+    [Symbol.asyncIterator]: gen,
+    start: function(callback) {
+      (async () => {
+        for await (const changes of gen()) {
+          callback(changes);
+        }
+      })();
+      return this.end.bind(this);
+    },
+    end() {
+      abort = true;
+      if (timeout) {
+        clearTimeout(timeout);
       }
-    })();
-    return this.end.bind(this);
-  }
-  end() {
-    this.abort = true;
-    if (this.timeout) {
-      clearTimeout(this.timeout);
     }
-  }
+  };
 }
 
 function makeFilter({ test, ignore, ignoreDotFiles }: Options) {
