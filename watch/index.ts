@@ -44,6 +44,7 @@ export default function watch(
   const filter = makeFilter(options);
   async function* gen() {
     const state = {};
+    let lastTime = Math.floor(Date.now() / 1000);
     for (let dir of dirs) {
       let files = {};
       collect(files, dir, options.followSymlink, filter);
@@ -56,6 +57,8 @@ export default function watch(
       if (abort) {
         break;
       }
+      const lastTimeCopy = lastTime;
+      lastTime = Math.floor(Date.now() / 1000);
       let allChanges = [];
       let start = Date.now();
       let count = 0;
@@ -64,6 +67,7 @@ export default function watch(
         count += Object.keys(files).length;
         const [newFiles, changes] = await detectChanges(
           files,
+          lastTimeCopy,
           dir,
           options,
           filter
@@ -125,13 +129,14 @@ function makeFilter({ test, ignore, ignoreDotFiles }: Options) {
 
 async function detectChanges(
   prev: any,
+  lastTime: number,
   dir: string,
   { followSymlink }: Options,
   filter: (info: FileInfo) => boolean
 ): Promise<[any, string[] | null]> {
   const curr = {};
   const changes = [];
-  await walk(prev, curr, dir, followSymlink, filter, changes);
+  await walk(prev, curr, lastTime, dir, followSymlink, filter, changes);
   for (let path in prev) {
     changes.push({
       action: "DELETED",
@@ -144,6 +149,7 @@ async function detectChanges(
 async function walk(
   prev: any,
   curr: any,
+  lastTime: number,
   dir: string,
   followSymlink: boolean,
   filter: (info: FileInfo) => boolean,
@@ -165,16 +171,19 @@ async function walk(
       continue;
     }
     if (f.isDirectory() || f.isSymlink()) {
-      promises.push(walk(prev, curr, f.path, followSymlink, filter, changes));
+      promises.push(
+        walk(prev, curr, lastTime, f.path, followSymlink, filter, changes)
+      );
       continue;
     }
     curr[f.path] = f.modified || f.created;
+    // console.log(lastTime, curr[f.path]);
     if (!prev[f.path]) {
       changes.push({
         action: "ADDED",
         file: f.path
       });
-    } else if (prev[f.path] < curr[f.path]) {
+    } else if (lastTime <= curr[f.path]) {
       changes.push({
         action: "MODIFIED",
         file: f.path
