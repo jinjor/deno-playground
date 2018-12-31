@@ -37,71 +37,28 @@ const defaultOptions = {
   interval: 1000,
   followSymlink: false,
   ignoreDotFiles: true,
-  log: null,
-  test: null,
-  ignore: null
+  log: function() {},
+  test: /.*/,
+  ignore: /$^/
 };
 
 export default function watch(
   dirs: string | string[],
   options?: Options
 ): Watcher {
-  dirs = Array.isArray(dirs) ? dirs : [dirs];
+  const dirs_ = Array.isArray(dirs) ? dirs : [dirs];
   options = Object.assign({}, defaultOptions, options);
-  const filter = makeFilter(options);
-  const log = options.log || function() {};
-  async function* gen(
-    state = {
-      abort: false,
-      timeout: null
-    }
-  ) {
-    const allFiles = {};
-    for (let dir of dirs) {
-      let files = {};
-      collect(files, dir, options.followSymlink, filter);
-      allFiles[dir] = files;
-    }
-    while (true) {
-      await new Promise(resolve => {
-        state.timeout = setTimeout(resolve, options.interval);
-      });
-      if (state.abort) {
-        break;
-      }
-      let changes = new Changes();
-      let start = Date.now();
-      let count = 0;
-      for (let dir in allFiles) {
-        const files = allFiles[dir];
-        count += Object.keys(files).length;
-        const newFiles = {};
-        await detectChanges(
-          files,
-          newFiles,
-          dir,
-          options.followSymlink,
-          filter,
-          changes
-        );
-        allFiles[dir] = newFiles;
-      }
-      let end = Date.now();
-      log(`took ${end - start}ms to traverse ${count} files`);
-      if (changes.length) {
-        yield changes;
-      }
-    }
-  }
   return {
-    [Symbol.asyncIterator]: gen,
+    [Symbol.asyncIterator]() {
+      return run(dirs_, options);
+    },
     start: function(callback: (changes: Changes) => Promise<void>) {
       const state = {
         abort: false,
         timeout: null
       };
       (async () => {
-        for await (const changes of gen(state)) {
+        for await (const changes of run(dirs_, options, state)) {
           await callback(changes);
         }
       })();
@@ -114,18 +71,50 @@ export default function watch(
     }
   };
 }
+async function* run(
+  dirs: string[],
+  options: Options,
+  state = {
+    abort: false,
+    timeout: null
+  }
+) {
+  const { interval, followSymlink, log } = options;
+  const filter = makeFilter(options);
+  const allFiles = {};
+  for (let dir of dirs) {
+    let files = {};
+    collect(files, dir, followSymlink, filter);
+    allFiles[dir] = files;
+  }
+  while (true) {
+    await new Promise(resolve => {
+      state.timeout = setTimeout(resolve, interval);
+    });
+    if (state.abort) {
+      break;
+    }
+    let changes = new Changes();
+    let start = Date.now();
+    let count = 0;
+    for (let dir in allFiles) {
+      const files = allFiles[dir];
+      count += Object.keys(files).length;
+      const newFiles = {};
+      await detectChanges(files, newFiles, dir, followSymlink, filter, changes);
+      allFiles[dir] = newFiles;
+    }
+    let end = Date.now();
+    log(`took ${end - start}ms to traverse ${count} files`);
+    if (changes.length) {
+      yield changes;
+    }
+  }
+}
 
 function makeFilter({ test, ignore, ignoreDotFiles }: Options) {
-  const testRegex = test
-    ? typeof test === "string"
-      ? new RegExp(test)
-      : test
-    : /.*/;
-  const ignoreRegex = ignore
-    ? typeof ignore === "string"
-      ? new RegExp(ignore)
-      : ignore
-    : /$^/;
+  const testRegex = typeof test === "string" ? new RegExp(test) : test;
+  const ignoreRegex = typeof ignore === "string" ? new RegExp(ignore) : ignore;
   return function filter(f: FileInfo) {
     if (ignoreDotFiles && f.name.charAt(0) === ".") {
       return false;
