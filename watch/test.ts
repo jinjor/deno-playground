@@ -14,7 +14,7 @@ function randomName(pre = "", post = ""): string {
   return pre + Math.floor(Math.random() * 100000) + post;
 }
 
-test(async function basic() {
+test(async function Watch() {
   const tmpDir = await makeTempDir();
   try {
     let result = [];
@@ -92,7 +92,7 @@ test(async function filter() {
   }
 });
 
-test(async function generator() {
+test(async function WatchByGenerator() {
   const tmpDir = await makeTempDir();
   try {
     const watcher = watch(tmpDir);
@@ -104,38 +104,6 @@ test(async function generator() {
       assertEqual(changes.length, 1);
       watcher.end();
     }
-  } finally {
-    await removeAll(tmpDir);
-  }
-});
-
-test(async function frequent() {
-  const tmpDir = await makeTempDir();
-  try {
-    let count = 0;
-    let finished = false;
-    const watcher = watch(tmpDir, {
-      interval: 10
-    });
-    const filePath = path.join(tmpDir, randomName("", ".txt"));
-    setTimeout(async () => {
-      await writeFile(filePath, new Uint8Array(0));
-    }, 100);
-    setTimeout(() => {
-      if (!finished) {
-        watcher.end();
-        throw new Error("not finished");
-      }
-    }, 5000);
-    for await (const changes of watcher) {
-      console.log("detected", count);
-      // await new Promise(resolve => setTimeout(resolve, 800));
-      await writeFile(filePath, new Uint8Array(0));
-      if (++count > 100) {
-        watcher.end();
-      }
-    }
-    finished = true;
   } finally {
     await removeAll(tmpDir);
   }
