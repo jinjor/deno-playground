@@ -8,10 +8,18 @@ import {
   FileInfo
 } from "deno";
 
-export interface Change {
-  action: "ADDED" | "MODIFIED" | "DELETED";
-  file: string;
+export class Changes {
+  added: string[] = [];
+  modified: string[] = [];
+  deleted: string[] = [];
+  get length(): number {
+    return this.added.length + this.modified.length + this.deleted.length;
+  }
+  get all(): string[] {
+    return [...this.added, ...this.modified, ...this.deleted];
+  }
 }
+
 export interface Options {
   interval?: number;
   followSymlink?: boolean;
@@ -20,10 +28,12 @@ export interface Options {
   test?: RegExp | string;
   ignore?: RegExp | string;
 }
-export interface Watcher extends AsyncIterable<Change[]> {
-  start(callback: (changes: Change[]) => void): () => void;
+
+export interface Watcher extends AsyncIterable<Changes> {
+  start(callback: (changes: Changes) => void): () => void;
   end: () => void;
 }
+
 const defaultOptions = {
   interval: 1000,
   followSymlink: false,
@@ -56,26 +66,28 @@ export default function watch(
       if (abort) {
         break;
       }
-      let allChanges: Change[] = [];
+      let changes = new Changes();
       let start = Date.now();
       let count = 0;
       for (let dir in state) {
         const files = state[dir];
         count += Object.keys(files).length;
-        const [newFiles, changes] = await detectChanges(
+        const newFiles = {};
+        await detectChanges(
           files,
+          newFiles,
           dir,
-          options,
-          filter
+          options.followSymlink,
+          filter,
+          changes
         );
         state[dir] = newFiles;
-        allChanges = [...allChanges, ...changes];
       }
       let end = Date.now();
       options.log &&
         options.log(`took ${end - start}ms to traverse ${count} files`);
-      if (allChanges.length) {
-        yield allChanges;
+      if (changes.length) {
+        yield changes;
       }
     }
   }
@@ -125,20 +137,14 @@ function makeFilter({ test, ignore, ignoreDotFiles }: Options) {
 
 async function detectChanges(
   prev: any,
+  curr: any,
   dir: string,
-  { followSymlink }: Options,
-  filter: (info: FileInfo) => boolean
-): Promise<[any, Change[] | null]> {
-  const curr = {};
-  const changes: Change[] = [];
+  followSymlink: boolean,
+  filter: (info: FileInfo) => boolean,
+  changes: Changes
+): Promise<void> {
   await walk(prev, curr, dir, followSymlink, filter, changes);
-  for (let path in prev) {
-    changes.push({
-      action: "DELETED",
-      file: path
-    });
-  }
-  return [curr, changes];
+  Array.prototype.push.apply(changes.deleted, Object.keys(prev));
 }
 
 async function walk(
@@ -147,7 +153,7 @@ async function walk(
   dir: string,
   followSymlink: boolean,
   filter: (info: FileInfo) => boolean,
-  changes: Change[]
+  changes: Changes
 ): Promise<void> {
   let files = [];
   let dirInfo = await lstat(dir);
@@ -170,15 +176,9 @@ async function walk(
     }
     curr[f.path] = f.modified || f.created;
     if (!prev[f.path]) {
-      changes.push({
-        action: "ADDED",
-        file: f.path
-      });
+      changes.added.push(f.path);
     } else if (prev[f.path] < curr[f.path]) {
-      changes.push({
-        action: "MODIFIED",
-        file: f.path
-      });
+      changes.modified.push(f.path);
     }
     delete prev[f.path];
   }

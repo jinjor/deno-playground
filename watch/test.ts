@@ -8,11 +8,7 @@ import {
 } from "deno";
 import watch from "index.ts";
 import * as path from "https://deno.land/x/path/index.ts";
-import {
-  test,
-  assert,
-  assertEqual
-} from "https://deno.land/x/testing/testing.ts";
+import { test, assertEqual } from "https://deno.land/x/testing/testing.ts";
 
 function randomName(pre = "", post = ""): string {
   return pre + Math.floor(Math.random() * 100000) + post;
@@ -25,19 +21,9 @@ test(async function Watch() {
     let modified = [];
     let deleted = [];
     const end = watch(tmpDir).start(changes => {
-      for (let change of changes) {
-        switch (change.action) {
-          case "ADDED":
-            added = added.concat(changes);
-            break;
-          case "MODIFIED":
-            modified = modified.concat(changes);
-            break;
-          case "DELETED":
-            deleted = deleted.concat(changes);
-            break;
-        }
-      }
+      added = added.concat(changes.added);
+      modified = modified.concat(changes.modified);
+      deleted = deleted.concat(changes.deleted);
     });
     function assertResult(a, m, d) {
       assertEqual(added.length, a);
@@ -70,20 +56,20 @@ test(async function filter() {
   try {
     let result1 = [];
     const end1 = watch(tmpDir).start(changes => {
-      result1 = result1.concat(changes);
+      result1 = result1.concat(changes.added);
     });
     let result2 = [];
     const end2 = watch(tmpDir, { test: ".ts$" }).start(changes => {
-      result2 = result2.concat(changes);
+      result2 = result2.concat(changes.added);
     });
     let result3 = [];
     const end3 = watch(tmpDir, { ignore: ".ts$" }).start(changes => {
-      result3 = result3.concat(changes);
+      result3 = result3.concat(changes.added);
     });
     let result4 = [];
     const end4 = watch(tmpDir, { test: ".(ts|css)$", ignore: ".css$" }).start(
       changes => {
-        result4 = result4.concat(changes);
+        result4 = result4.concat(changes.added);
       }
     );
     try {
