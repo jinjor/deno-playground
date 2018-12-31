@@ -52,6 +52,7 @@ export default function watch(
   let abort = false;
   let timeout = null;
   const filter = makeFilter(options);
+  const log = options.log || function() {};
   async function* gen() {
     const state = {};
     for (let dir of dirs) {
@@ -84,8 +85,7 @@ export default function watch(
         state[dir] = newFiles;
       }
       let end = Date.now();
-      options.log &&
-        options.log(`took ${end - start}ms to traverse ${count} files`);
+      log(`took ${end - start}ms to traverse ${count} files`);
       if (changes.length) {
         yield changes;
       }
