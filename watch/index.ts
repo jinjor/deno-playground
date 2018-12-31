@@ -16,7 +16,7 @@ export interface Options {
   interval?: number;
   followSymlink?: boolean;
   ignoreDotFiles?: boolean;
-  log?: Function;
+  log?: (s: string) => void;
   test?: RegExp | string;
   ignore?: RegExp | string;
 }
