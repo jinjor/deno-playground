@@ -6,7 +6,8 @@ import {
   ErrorKind,
   readFile,
   Reader,
-  Closer
+  Closer,
+  close
 } from "deno";
 import { getType } from "mime.ts";
 import { path, http, color } from "package.ts";
@@ -84,7 +85,7 @@ export class App {
   }
   async listen(port: number, host = "127.0.0.1") {
     const s = http.serve(`${host}:${port}`);
-    (async () => {
+    async function start() {
       for await (const httpRequest of s) {
         const req = new Request(httpRequest);
         const res = new Response();
@@ -111,11 +112,17 @@ export class App {
           // console.log(await resources());
         }
       }
-    })();
+    }
+    async function close() {
+      throw new Error("cannot close for now");
+    }
+    await start();
     return {
       port,
-      close() {
-        throw new Error("cannot close for now");
+      close,
+      async restart() {
+        await close();
+        await start();
       }
     };
   }
