@@ -30,8 +30,7 @@ export interface Options {
 }
 
 export interface Watcher extends AsyncIterable<Changes> {
-  start(callback: (changes: Changes) => void): () => void;
-  end: () => void;
+  start(callback: (changes: Changes) => Promise<void>): () => void;
 }
 
 const defaultOptions = {
@@ -49,29 +48,32 @@ export default function watch(
 ): Watcher {
   dirs = Array.isArray(dirs) ? dirs : [dirs];
   options = Object.assign({}, defaultOptions, options);
-  let abort = false;
-  let timeout = null;
   const filter = makeFilter(options);
   const log = options.log || function() {};
-  async function* gen() {
-    const state = {};
+  async function* gen(
+    state = {
+      abort: false,
+      timeout: null
+    }
+  ) {
+    const allFiles = {};
     for (let dir of dirs) {
       let files = {};
       collect(files, dir, options.followSymlink, filter);
-      state[dir] = files;
+      allFiles[dir] = files;
     }
     while (true) {
       await new Promise(resolve => {
-        timeout = setTimeout(resolve, options.interval);
+        state.timeout = setTimeout(resolve, options.interval);
       });
-      if (abort) {
+      if (state.abort) {
         break;
       }
       let changes = new Changes();
       let start = Date.now();
       let count = 0;
-      for (let dir in state) {
-        const files = state[dir];
+      for (let dir in allFiles) {
+        const files = allFiles[dir];
         count += Object.keys(files).length;
         const newFiles = {};
         await detectChanges(
@@ -82,7 +84,7 @@ export default function watch(
           filter,
           changes
         );
-        state[dir] = newFiles;
+        allFiles[dir] = newFiles;
       }
       let end = Date.now();
       log(`took ${end - start}ms to traverse ${count} files`);
@@ -93,19 +95,22 @@ export default function watch(
   }
   return {
     [Symbol.asyncIterator]: gen,
-    start: function(callback) {
+    start: function(callback: (changes: Changes) => Promise<void>) {
+      const state = {
+        abort: false,
+        timeout: null
+      };
       (async () => {
-        for await (const changes of gen()) {
-          callback(changes);
+        for await (const changes of gen(state)) {
+          await callback(changes);
         }
       })();
-      return this.end.bind(this);
-    },
-    end() {
-      abort = true;
-      if (timeout) {
-        clearTimeout(timeout);
-      }
+      return () => {
+        state.abort = true;
+        if (state.timeout) {
+          clearTimeout(state.timeout);
+        }
+      };
     }
   };
 }

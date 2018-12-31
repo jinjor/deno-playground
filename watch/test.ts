@@ -104,14 +104,13 @@ test(async function filter() {
 test(async function WatchByGenerator() {
   const tmpDir = await makeTempDir();
   try {
-    const watcher = watch(tmpDir);
     const filePath = path.join(tmpDir, randomName("", ".txt"));
     setTimeout(async () => {
       await writeFile(filePath, new Uint8Array(0));
     }, 100);
-    for await (const changes of watcher) {
+    for await (const changes of watch(tmpDir)) {
       assertEqual(changes.length, 1);
-      watcher.end();
+      break;
     }
   } finally {
     await removeAll(tmpDir);
