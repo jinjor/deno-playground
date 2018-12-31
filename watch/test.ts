@@ -8,7 +8,11 @@ import {
 } from "deno";
 import watch from "index.ts";
 import * as path from "https://deno.land/x/path/index.ts";
-import { test, assertEqual } from "https://deno.land/x/testing/testing.ts";
+import {
+  test,
+  assert,
+  assertEqual
+} from "https://deno.land/x/testing/testing.ts";
 
 function randomName(pre = "", post = ""): string {
   return pre + Math.floor(Math.random() * 100000) + post;
@@ -17,23 +21,42 @@ function randomName(pre = "", post = ""): string {
 test(async function Watch() {
   const tmpDir = await makeTempDir();
   try {
-    let result = [];
+    let added = [];
+    let modified = [];
+    let deleted = [];
     const end = watch(tmpDir).start(changes => {
-      result = result.concat(changes);
+      for (let change of changes) {
+        switch (change.action) {
+          case "ADDED":
+            added = added.concat(changes);
+            break;
+          case "MODIFIED":
+            modified = modified.concat(changes);
+            break;
+          case "DELETED":
+            deleted = deleted.concat(changes);
+            break;
+        }
+      }
     });
+    function assertResult(a, m, d) {
+      assertEqual(added.length, a);
+      assertEqual(modified.length, m);
+      assertEqual(deleted.length, d);
+    }
     try {
       const filePath = path.join(tmpDir, randomName("", ".txt"));
       await writeFile(filePath, new Uint8Array(0));
       await new Promise(resolve => setTimeout(resolve, 100));
-      assertEqual(result.length, 0);
+      assertResult(0, 0, 0);
       await new Promise(resolve => setTimeout(resolve, 1200));
-      assertEqual(result.length, 1);
+      assertResult(1, 0, 0);
       await writeFile(filePath, new Uint8Array(0));
       await new Promise(resolve => setTimeout(resolve, 1200));
-      assertEqual(result.length, 2);
+      assertResult(1, 1, 0);
       await remove(filePath);
       await new Promise(resolve => setTimeout(resolve, 1200));
-      assertEqual(result.length, 3);
+      assertResult(1, 1, 1);
     } finally {
       end();
     }

@@ -20,8 +20,8 @@ export interface Options {
   test?: RegExp | string;
   ignore?: RegExp | string;
 }
-export interface Watcher extends AsyncIterable<string[]> {
-  start(callback: (changes: string[]) => void): () => void;
+export interface Watcher extends AsyncIterable<Change[]> {
+  start(callback: (changes: Change[]) => void): () => void;
   end: () => void;
 }
 const defaultOptions = {
@@ -56,7 +56,7 @@ export default function watch(
       if (abort) {
         break;
       }
-      let allChanges = [];
+      let allChanges: Change[] = [];
       let start = Date.now();
       let count = 0;
       for (let dir in state) {
@@ -128,9 +128,9 @@ async function detectChanges(
   dir: string,
   { followSymlink }: Options,
   filter: (info: FileInfo) => boolean
-): Promise<[any, string[] | null]> {
+): Promise<[any, Change[] | null]> {
   const curr = {};
-  const changes = [];
+  const changes: Change[] = [];
   await walk(prev, curr, dir, followSymlink, filter, changes);
   for (let path in prev) {
     changes.push({
