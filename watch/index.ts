@@ -206,3 +206,92 @@ function collect(
     all[f.path] = f.modified || f.created;
   }
 }
+
+// interface FS {
+//   lstat(f: string): Promise<FileInfo>;
+//   readlink(f: string): Promise<string>;
+//   readDir(f: string): Promise<FileInfo[]>;
+// }
+// class AsyncFS implements FS {
+//   lstat = lstat;
+//   readlink = readlink;
+//   readDir = readDir;
+// }
+// class SyncFS implements FS {
+//   lstat = async s => lstatSync(s);
+//   readlink = async s => readlinkSync(s);
+//   readDir = async s => readDirSync(s);
+// }
+
+async function* experimentalWalk(
+  init: FileInfo[],
+  followSymlink: boolean,
+  filter: (f: FileInfo) => boolean
+): AsyncIterableIterator<FileInfo> {
+  const queue: FileInfo[] = init;
+  const promises: Promise<FileInfo | FileInfo[]>[] = [];
+  while (queue.length) {
+    let f = queue.shift();
+    if (f.isDirectory()) {
+      promises.push(readDir(f.path));
+    } else if (f.isSymlink()) {
+      if (followSymlink) {
+        promises.push(readlink(f.path).then(lstat));
+      }
+    } else {
+      if (filter(f)) {
+        yield f;
+      }
+    }
+    const files = await Promise.all(promises);
+    promises.length = 0;
+    for (let f of files) {
+      if (Array.isArray(f)) {
+        Array.prototype.push.apply(queue, f);
+      } else {
+        queue.push(f);
+      }
+    }
+  }
+}
+function* experimentalWalkSync(
+  init: FileInfo[],
+  followSymlink: boolean,
+  filter: (f: FileInfo) => boolean
+): IterableIterator<FileInfo> {
+  const queue: FileInfo[] = init;
+  while (queue.length) {
+    let f = queue.shift();
+    if (f.isDirectory()) {
+      Array.prototype.push.apply(queue, readDirSync(f.path));
+    } else if (f.isSymlink()) {
+      if (followSymlink) {
+        Array.prototype.push.apply(lstatSync(readlinkSync(f.path)));
+      }
+    } else {
+      if (filter(f)) {
+        yield f;
+      }
+    }
+  }
+}
+async function detectChanges2(
+  prev: any,
+  curr: any,
+  dir: string,
+  followSymlink: boolean,
+  filter: (info: FileInfo) => boolean,
+  changes: Changes
+): Promise<void> {
+  const init = await readDir(dir);
+  for await (const f of experimentalWalk(init, followSymlink, filter)) {
+    curr[f.path] = f.modified || f.created;
+    if (!prev[f.path]) {
+      changes.added.push(f.path);
+    } else if (prev[f.path] < curr[f.path]) {
+      changes.modified.push(f.path);
+    }
+    delete prev[f.path];
+  }
+  Array.prototype.push.apply(changes.deleted, Object.keys(prev));
+}
