@@ -11,7 +11,7 @@ export async function main(
 ) {
   let shouldRefresh = false;
   const app = new expressive.App();
-  app.use(expressive.simpleLog());
+  // app.use(expressive.simpleLog());
   app.use(async (req, res, next) => {
     try {
       await next();
