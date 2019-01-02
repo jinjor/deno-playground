@@ -15,7 +15,7 @@ export class CancelablePromise<T> extends Promise<T> {
     this.onCancel();
     this.resolvers.reject(error);
   }
-  done(value?: T) {
+  done(value: T) {
     this.onCancel();
     this.resolvers.resolve(value);
   }
