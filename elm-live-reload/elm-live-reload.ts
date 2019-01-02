@@ -1,3 +1,5 @@
+#!/usr/bin/env deno --allow-net --allow-run
+
 import { args, run, exit } from "deno";
 import { flags } from "package.ts";
 import { main } from "index.ts";
