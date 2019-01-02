@@ -52,7 +52,7 @@ export default function watch(
     [Symbol.asyncIterator]() {
       return run(dirs_, options);
     },
-    start: function(callback: (changes: Changes) => Promise<void>) {
+    start: function(callback: (changes: Changes) => Promise<void> | void) {
       const state = {
         abort: false,
         timeout: null
