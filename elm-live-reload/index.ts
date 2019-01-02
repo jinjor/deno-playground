@@ -12,6 +12,14 @@ export async function main(
   let shouldRefresh = false;
   const app = new expressive.App();
   app.use(expressive.simpleLog());
+  app.use(async (req, res, next) => {
+    try {
+      await next();
+    } catch (e) {
+      console.log(e);
+      throw e;
+    }
+  });
   app.use(expressive.static_(publicDir));
   app.use(expressive.static_(distDir));
   app.use(expressive.bodyParser.json());
@@ -25,10 +33,6 @@ export async function main(
       shouldRefresh = false;
       res.status = 205;
     }
-  });
-  app.on("unexpectedError", async (req, res) => {
-    console.log(req.error);
-    res.status = 500;
   });
   const server = await app.listen(port);
   console.log("server listening on port " + server.port + ".");

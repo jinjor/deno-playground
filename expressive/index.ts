@@ -6,8 +6,7 @@ import {
   ErrorKind,
   readFile,
   Reader,
-  Closer,
-  close
+  Closer
 } from "deno";
 import { getType } from "mime.ts";
 import { path, http, color } from "package.ts";
@@ -64,24 +63,11 @@ export interface PathHandler {
   match: (path: string) => any;
   handle: EndHandler;
 }
-interface EventHandlers {
-  [key: string]: EndHandler;
-}
-
-const defaultEventHandlers: EventHandlers = {
-  unexpectedError: async (req, res) => {
-    await res.empty(500);
-  }
-};
 
 export class App {
   middlewares: Middleware[] = [];
-  eventHandlers = defaultEventHandlers;
   use(m: Middleware) {
     this.middlewares.push(m);
-  }
-  on(event: string, f: any) {
-    this.eventHandlers[event] = f;
   }
   async listen(port: number, host = "127.0.0.1") {
     const s = http.serve(`${host}:${port}`);
@@ -93,23 +79,14 @@ export class App {
         }
         const req = new Request(httpRequest);
         const res = new Response();
-        let unexpectedError = false;
         try {
           await runMiddlewares(this.middlewares, req, res);
         } catch (e) {
-          req.error = e;
-          unexpectedError = true;
+          if (!res.status) {
+            res.status = 500;
+          }
         }
         try {
-          if (req.error) {
-            if (unexpectedError) {
-              await this.eventHandlers.unexpectedError(req, res);
-            } else {
-              if (!res.status) {
-                res.status = 500;
-              }
-            }
-          }
           await httpRequest.respond(res.toHttpResponse());
         } finally {
           res.close();

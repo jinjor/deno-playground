@@ -1,5 +1,4 @@
 import * as expressive from "../index.ts";
-import { removeSync } from "deno";
 
 (async () => {
   const port = 3000;
