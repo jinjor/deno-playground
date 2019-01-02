@@ -12,11 +12,17 @@ export class Changes {
   added: string[] = [];
   modified: string[] = [];
   deleted: string[] = [];
+  startTime: number;
+  endTime: number;
+  fileCount = 0;
   get length(): number {
     return this.added.length + this.modified.length + this.deleted.length;
   }
   get all(): string[] {
     return [...this.added, ...this.modified, ...this.deleted];
+  }
+  get time() {
+    return this.endTime - this.startTime;
   }
 }
 
@@ -37,7 +43,6 @@ const defaultOptions = {
   interval: 1000,
   followSymlink: false,
   ignoreDotFiles: true,
-  log: function() {},
   test: /.*/,
   ignore: /$^/
 };
@@ -79,33 +84,32 @@ async function* run(
     timeout: null
   }
 ) {
-  const { interval, followSymlink, log } = options;
+  const { interval, followSymlink } = options;
   const filter = makeFilter(options);
   const allFiles = {};
+  let lastStartTime = Date.now();
   for (let dir of dirs) {
     let files = {};
     collect(files, dir, followSymlink, filter);
     allFiles[dir] = files;
   }
-  while (true) {
+  while (!state.abort) {
+    let waitTime = Math.max(0, interval - (Date.now() - lastStartTime));
     await new Promise(resolve => {
-      state.timeout = setTimeout(resolve, interval);
+      state.timeout = setTimeout(resolve, waitTime);
     });
-    if (state.abort) {
-      break;
-    }
+    state.timeout = null;
+    lastStartTime = Date.now();
     let changes = new Changes();
-    let start = Date.now();
-    let count = 0;
+    changes.startTime = lastStartTime;
     for (let dir in allFiles) {
       const files = allFiles[dir];
-      count += Object.keys(files).length;
+      changes.fileCount += Object.keys(files).length;
       const newFiles = {};
       await detectChanges(files, newFiles, dir, followSymlink, filter, changes);
       allFiles[dir] = newFiles;
     }
-    let end = Date.now();
-    log(`took ${end - start}ms to traverse ${count} files`);
+    changes.endTime = Date.now();
     if (changes.length) {
       yield changes;
     }

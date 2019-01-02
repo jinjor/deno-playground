@@ -127,11 +127,11 @@ test(async function Benchmark() {
     const files = [];
     await generateManyFiles(tmpDir, files);
     console.log(`generated ${files.length} files.`);
-    const end = watch(tmpDir, {
-      log: s => {
-        console.log(s);
-      }
-    }).start(function() {});
+    const end = watch(tmpDir).start(result => {
+      console.log(
+        `took ${result.time}ms to traverse ${result.fileCount} files`
+      );
+    });
     try {
       console.log("[Add]");
       for (let i = 0; i < 1000; i++) {
@@ -157,6 +157,7 @@ test(async function Benchmark() {
           try {
             await remove(fileName);
           } catch (e) {
+            console.log("error");
             console.log(e);
           }
         }

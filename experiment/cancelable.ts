@@ -8,12 +8,12 @@ export class CancelablePromise<T> extends Promise<T> {
       resolvers.resolve = resolve;
       resolvers.reject = reject;
       return f(
-        args => {
+        (...args) => {
           if (this.finished) return;
           resolve.apply(null, args);
           this.finished = true;
         },
-        args => {
+        (...args) => {
           if (this.finished) return;
           reject.apply(null, args);
           this.finished = true;
