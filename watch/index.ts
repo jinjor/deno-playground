@@ -30,7 +30,7 @@ export interface Options {
 }
 
 export interface Watcher extends AsyncIterable<Changes> {
-  start(callback: (changes: Changes) => Promise<void>): () => void;
+  start(callback: (changes: Changes) => Promise<void> | void): () => void;
 }
 
 const defaultOptions = {

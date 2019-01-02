@@ -8,7 +8,12 @@ import {
 } from "deno";
 import watch from "index.ts";
 import * as path from "https://deno.land/x/path/index.ts";
-import { test, assertEqual } from "https://deno.land/x/testing/testing.ts";
+import {
+  test,
+  assert,
+  assertEqual
+} from "https://deno.land/x/testing/testing.ts";
+import { delay } from "cancelable.ts";
 
 function randomName(pre = "", post = ""): string {
   return pre + Math.floor(Math.random() * 100000) + post;
@@ -183,3 +188,23 @@ async function generateManyFiles(dir, files, depth = DEPTH) {
     await generateManyFiles(newDir, files, depth - 1);
   }
 }
+
+test(function CancerablePromise() {
+  const p1 = delay(10000);
+  p1.catch(_ => {
+    assert(false);
+  }).then(v => {
+    assertEqual(v, 1);
+  });
+  const p2 = delay(10000);
+  p2.then(_ => {
+    assert(false);
+  }).catch(e => {
+    assertEqual(e, 2);
+  });
+
+  setTimeout(() => {
+    p1.done(1 as any);
+    p2.cancel(2);
+  }, 1000);
+});
