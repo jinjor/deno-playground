@@ -85,8 +85,12 @@ export class App {
   }
   async listen(port: number, host = "127.0.0.1") {
     const s = http.serve(`${host}:${port}`);
+    let abort = false;
     async function start() {
       for await (const httpRequest of s) {
+        if (abort) {
+          break;
+        }
         const req = new Request(httpRequest);
         const res = new Response();
         let unexpectedError = false;
@@ -114,16 +118,12 @@ export class App {
       }
     }
     async function close() {
-      throw new Error("cannot close for now");
+      abort = true;
     }
     await start();
     return {
       port,
-      close,
-      async restart() {
-        await close();
-        await start();
-      }
+      close
     };
   }
   private addPathHandler(method: Method, pattern: string, handle: EndHandler) {
