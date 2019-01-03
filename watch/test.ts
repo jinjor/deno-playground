@@ -1,167 +1,121 @@
-import {
-  writeFile,
-  symlink,
-  mkdir,
-  remove,
-  removeAll,
-  makeTempDir
-} from "deno";
+import { writeFile, remove, removeAll, makeTempDir } from "deno";
 import watch from "index.ts";
-import * as path from "https://deno.land/x/path/index.ts";
-import {
-  test,
-  assert,
-  assertEqual
-} from "https://deno.land/x/testing/testing.ts";
+import { test, assertEqual } from "https://deno.land/x/testing/testing.ts";
+import { inTmp, genFile, genDir, genLink } from "random-files.ts";
 
-function randomName(pre = "", post = ""): string {
-  return pre + Math.floor(Math.random() * 100000) + post;
+function delay(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
 }
-
-test(async function Watch() {
-  const tmpDir = await makeTempDir();
+function assertChanges(changes, a, m, d) {
   try {
-    let added = [];
-    let modified = [];
-    let deleted = [];
-    const end = watch(tmpDir).start(changes => {
-      added = added.concat(changes.added);
-      modified = modified.concat(changes.modified);
-      deleted = deleted.concat(changes.deleted);
+    assertEqual(changes.added.length, a);
+    assertEqual(changes.modified.length, m);
+    assertEqual(changes.deleted.length, d);
+  } catch (e) {
+    console.log("expected:", `${a} ${m} ${d}`);
+    throw e;
+  }
+}
+test(async function Watch() {
+  await inTmp(async tmpDir => {
+    let changes = { added: [], modified: [], deleted: [] };
+    const end = watch(tmpDir).start(changes_ => {
+      changes = changes_;
     });
-    function assertResult(a, m, d) {
-      assertEqual(added.length, a);
-      assertEqual(modified.length, m);
-      assertEqual(deleted.length, d);
-    }
     try {
-      const filePath = path.join(tmpDir, randomName("", ".txt"));
-      await writeFile(filePath, new Uint8Array(0));
-      await new Promise(resolve => setTimeout(resolve, 100));
-      assertResult(0, 0, 0);
-      await new Promise(resolve => setTimeout(resolve, 1200));
-      assertResult(1, 0, 0);
-      await writeFile(filePath, new Uint8Array(0));
-      await new Promise(resolve => setTimeout(resolve, 1200));
-      assertResult(1, 1, 0);
-      await remove(filePath);
-      await new Promise(resolve => setTimeout(resolve, 1200));
-      assertResult(1, 1, 1);
+      const f = genFile(tmpDir);
+      await delay(100);
+      assertChanges(changes, 0, 0, 0);
+      await delay(1200);
+      assertChanges(changes, 1, 0, 0);
+      f.modify();
+      await delay(1200);
+      assertChanges(changes, 0, 1, 0);
+      f.remove();
+      await delay(1200);
+      assertChanges(changes, 0, 0, 1);
     } finally {
       end();
     }
-  } finally {
-    await removeAll(tmpDir);
-  }
+  });
 });
-
 test(async function Symlink() {
   const tmpDir = await makeTempDir();
   const anotherDir = await makeTempDir();
   try {
-    let added = [];
-    let modified = [];
-    let deleted = [];
+    let changes = { added: [], modified: [], deleted: [] };
     const end = watch(tmpDir, {
       followSymlink: true
-    }).start(changes => {
-      added = added.concat(changes.added);
-      modified = modified.concat(changes.modified);
-      deleted = deleted.concat(changes.deleted);
+    }).start(changes_ => {
+      changes = changes_;
     });
-    function assertResult(a, m, d) {
-      assertEqual(added.length, a);
-      assertEqual(modified.length, m);
-      assertEqual(deleted.length, d);
-    }
     try {
       {
-        const filePath = path.join(anotherDir, randomName());
-        const linkPath = path.join(tmpDir, randomName());
-        await writeFile(filePath, new Uint8Array(0));
-        await symlink(filePath, linkPath);
-        await new Promise(resolve => setTimeout(resolve, 1200));
-        assertResult(1, 0, 0);
-        await writeFile(filePath, new Uint8Array(0));
-        await new Promise(resolve => setTimeout(resolve, 1200));
-        assertResult(1, 1, 0);
+        const f = genFile(anotherDir);
+        const link = genLink(tmpDir, f.path);
+        await delay(1200);
+        assertChanges(changes, 1, 0, 0);
+        f.modify();
+        await delay(1200);
+        assertChanges(changes, 0, 1, 0);
       }
       {
-        const filePath = path.join(anotherDir, randomName());
-        const linkPath1 = path.join(anotherDir, randomName());
-        const linkPath2 = path.join(tmpDir, randomName());
-        await writeFile(filePath, new Uint8Array(0));
-        await symlink(filePath, linkPath1);
-        await symlink(linkPath1, linkPath2);
-        await new Promise(resolve => setTimeout(resolve, 1200));
-        assertResult(2, 1, 0);
-        await writeFile(filePath, new Uint8Array(0));
-        await new Promise(resolve => setTimeout(resolve, 1200));
-        assertResult(2, 2, 0);
+        const f = genFile(anotherDir);
+        const link1 = genLink(anotherDir, f.path);
+        const link2 = genLink(tmpDir, link1.path);
+        await delay(1200);
+        assertChanges(changes, 1, 0, 0);
+        f.modify();
+        await delay(1200);
+        assertChanges(changes, 0, 1, 0);
       }
       {
-        const dirPath = path.join(anotherDir, randomName());
-        const filePath = path.join(dirPath, randomName());
-        const linkPath = path.join(tmpDir, randomName());
-        await mkdir(dirPath);
-        await writeFile(filePath, new Uint8Array(0));
-        await symlink(dirPath, linkPath);
-        await new Promise(resolve => setTimeout(resolve, 1200));
-        assertResult(3, 2, 0);
-        await writeFile(filePath, new Uint8Array(0));
-        await new Promise(resolve => setTimeout(resolve, 1200));
-        assertResult(3, 3, 0);
+        const dir = genDir(anotherDir);
+        const f = genFile(dir.path);
+        const link = genLink(tmpDir, f.path);
+        await delay(1200);
+        assertChanges(changes, 1, 0, 0);
+        f.modify();
+        await delay(1200);
+        assertChanges(changes, 0, 1, 0);
       }
     } finally {
       end();
     }
   } finally {
     await removeAll(tmpDir);
+    await removeAll(anotherDir);
   }
 });
 
 test(async function dotFiles() {
-  const tmpDir = await makeTempDir();
-  try {
-    let added = [];
-    let modified = [];
-    let deleted = [];
-    const end = watch(tmpDir).start(changes => {
-      added = added.concat(changes.added);
-      modified = modified.concat(changes.modified);
-      deleted = deleted.concat(changes.deleted);
+  await inTmp(async tmpDir => {
+    let changes = { added: [], modified: [], deleted: [] };
+    const end = watch(tmpDir).start(changes_ => {
+      changes = changes_;
     });
-    function assertResult(a, m, d) {
-      assertEqual(added.length, a);
-      assertEqual(modified.length, m);
-      assertEqual(deleted.length, d);
-    }
     try {
-      {
-        const filePath = path.join(tmpDir, randomName("."));
-        await writeFile(filePath, new Uint8Array(0));
-        await new Promise(resolve => setTimeout(resolve, 1200));
-        assertResult(0, 0, 0);
-      }
-      {
-        const dirPath = path.join(tmpDir, randomName("."));
-        const filePath = path.join(dirPath, randomName());
-        await mkdir(dirPath);
-        await writeFile(filePath, new Uint8Array(0));
-        await new Promise(resolve => setTimeout(resolve, 1200));
-        assertResult(0, 0, 0);
-      }
+      const f = genFile(tmpDir, { prefix: "." });
+      await delay(1200);
+      assertChanges(changes, 0, 0, 0);
+      const link = genLink(tmpDir, f.path);
+      await delay(1200);
+      assertChanges(changes, 0, 0, 0);
+      const dir = genDir(tmpDir, { prefix: "." });
+      genFile(dir.path);
+      await delay(1200);
+      assertChanges(changes, 0, 0, 0);
+      f.remove();
+      dir.remove();
+      assertChanges(changes, 0, 0, 0);
     } finally {
       end();
     }
-  } finally {
-    await removeAll(tmpDir);
-  }
+  });
 });
 
 test(async function filter() {
-  const tmpDir = await makeTempDir();
-  try {
+  await inTmp(async tmpDir => {
     let result1 = [];
     const end1 = watch(tmpDir).start(changes => {
       result1 = result1.concat(changes.added);
@@ -181,19 +135,10 @@ test(async function filter() {
       }
     );
     try {
-      await writeFile(
-        path.join(tmpDir, randomName("", ".ts")),
-        new Uint8Array(0)
-      );
-      await writeFile(
-        path.join(tmpDir, randomName("", ".js")),
-        new Uint8Array(0)
-      );
-      await writeFile(
-        path.join(tmpDir, randomName("", ".css")),
-        new Uint8Array(0)
-      );
-      await new Promise(resolve => setTimeout(resolve, 1200));
+      genFile(tmpDir, { postfix: ".ts" });
+      genFile(tmpDir, { postfix: ".js" });
+      genFile(tmpDir, { postfix: ".css" });
+      await delay(1200);
       assertEqual(result1.length, 3);
       assertEqual(result2.length, 1);
       assertEqual(result3.length, 2);
@@ -204,30 +149,23 @@ test(async function filter() {
       end3();
       end4();
     }
-  } finally {
-    await removeAll(tmpDir);
-  }
+  });
 });
 
 test(async function WatchByGenerator() {
-  const tmpDir = await makeTempDir();
-  try {
-    const filePath = path.join(tmpDir, randomName("", ".txt"));
+  await inTmp(async tmpDir => {
     setTimeout(async () => {
-      await writeFile(filePath, new Uint8Array(0));
+      const f = genFile(tmpDir);
     }, 100);
     for await (const changes of watch(tmpDir)) {
-      assertEqual(changes.length, 1);
+      assertChanges(changes, 1, 0, 0);
       break;
     }
-  } finally {
-    await removeAll(tmpDir);
-  }
+  });
 });
 
 test(async function Benchmark() {
-  const tmpDir = await makeTempDir();
-  try {
+  await inTmp(async tmpDir => {
     const files = [];
     await generateManyFiles(tmpDir, files);
     console.log(`generated ${files.length} files.`);
@@ -239,14 +177,14 @@ test(async function Benchmark() {
     try {
       console.log("[Add]");
       for (let i = 0; i < 1000; i++) {
-        await new Promise(resolve => setTimeout(resolve, 2));
+        await delay(2);
         let fileName = files[Math.floor(Math.random() * files.length)];
         fileName = fileName + ".added";
         await writeFile(fileName, new Uint8Array(0));
       }
       console.log("[Modify]");
       for (let i = 0; i < 1000; i++) {
-        await new Promise(resolve => setTimeout(resolve, 2));
+        await delay(2);
         await writeFile(
           files[Math.floor(Math.random() * files.length)],
           new Uint8Array(0)
@@ -254,7 +192,7 @@ test(async function Benchmark() {
       }
       console.log("[Delete]");
       for (let i = 0; i < 1000; i++) {
-        await new Promise(resolve => setTimeout(resolve, 2));
+        await delay(2);
         const index = Math.floor(Math.random() * files.length);
         const fileName = files[index];
         if (fileName) {
@@ -270,10 +208,9 @@ test(async function Benchmark() {
     } finally {
       end();
     }
-  } finally {
-    await removeAll(tmpDir);
-  }
+  });
 });
+
 const DEPTH = 7;
 const FILE_PER_DIR = 10;
 const DIR_PER_DIR = 3;
@@ -282,13 +219,11 @@ async function generateManyFiles(dir, files, depth = DEPTH) {
     return;
   }
   for (let i = 0; i < FILE_PER_DIR; i++) {
-    const file = path.join(dir, randomName("", ".txt"));
-    files.push(file);
-    await writeFile(file, new Uint8Array(0));
+    const f = genFile(dir, { postfix: ".txt" });
+    files.push(f.path);
   }
   for (let i = 0; i < DIR_PER_DIR; i++) {
-    const newDir = path.join(dir, randomName());
-    await mkdir(newDir);
-    await generateManyFiles(newDir, files, depth - 1);
+    const d = genDir(dir);
+    await generateManyFiles(d.path, files, depth - 1);
   }
 }
