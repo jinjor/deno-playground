@@ -1,7 +1,14 @@
-import { writeFile, remove, removeAll, makeTempDir } from "deno";
+import { writeFile, remove } from "deno";
 import watch from "index.ts";
 import { test, assertEqual } from "https://deno.land/x/testing/testing.ts";
-import { inTmp, genFile, genDir, genLink, tree } from "random-files.ts";
+import {
+  inTmpDir,
+  genFile,
+  genDir,
+  genLink,
+  tree,
+  inTmpDirs
+} from "random-files.ts";
 
 function delay(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
@@ -18,7 +25,7 @@ function assertChanges(changes, a, m, d) {
   }
 }
 test(async function Watch() {
-  await inTmp(async tmpDir => {
+  await inTmpDir(async tmpDir => {
     let changes = { added: [], modified: [], deleted: [] };
     const end = watch(tmpDir).start(changes_ => {
       changes = changes_;
@@ -41,9 +48,7 @@ test(async function Watch() {
   });
 });
 test(async function Symlink() {
-  const tmpDir = await makeTempDir();
-  const anotherDir = await makeTempDir();
-  try {
+  await inTmpDirs(2, async ([tmpDir, anotherDir]) => {
     let changes = { added: [], modified: [], deleted: [] };
     const end = watch(tmpDir, {
       followSymlink: true
@@ -88,14 +93,11 @@ test(async function Symlink() {
     } finally {
       end();
     }
-  } finally {
-    await removeAll(tmpDir);
-    await removeAll(anotherDir);
-  }
+  });
 });
 
 test(async function dotFiles() {
-  await inTmp(async tmpDir => {
+  await inTmpDir(async tmpDir => {
     let changes = { added: [], modified: [], deleted: [] };
     const end = watch(tmpDir).start(changes_ => {
       changes = changes_;
@@ -121,7 +123,7 @@ test(async function dotFiles() {
 });
 
 test(async function filter() {
-  await inTmp(async tmpDir => {
+  await inTmpDir(async tmpDir => {
     let result1 = [];
     const end1 = watch(tmpDir).start(changes => {
       result1 = result1.concat(changes.added);
@@ -159,7 +161,7 @@ test(async function filter() {
 });
 
 test(async function WatchByGenerator() {
-  await inTmp(async tmpDir => {
+  await inTmpDir(async tmpDir => {
     setTimeout(async () => {
       const f = genFile(tmpDir);
     }, 100);
@@ -171,7 +173,7 @@ test(async function WatchByGenerator() {
 });
 
 test(async function Benchmark() {
-  await inTmp(async tmpDir => {
+  await inTmpDir(async tmpDir => {
     const files = [];
     await generateManyFiles(tmpDir, files);
     console.log(`generated ${files.length} files.`);
@@ -225,7 +227,7 @@ async function generateManyFiles(dir, files, depth = DEPTH) {
     return;
   }
   for (let i = 0; i < FILE_PER_DIR; i++) {
-    const f = genFile(dir, { postfix: ".txt" });
+    const f = genFile(dir);
     files.push(f.path);
   }
   for (let i = 0; i < DIR_PER_DIR; i++) {

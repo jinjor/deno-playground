@@ -5,7 +5,10 @@ import {
   removeSync,
   symlinkSync,
   mkdirSync,
-  run
+  removeAllSync,
+  run,
+  DenoError,
+  ErrorKind
 } from "deno";
 import * as path from "https://deno.land/x/path/index.ts";
 
@@ -13,14 +16,48 @@ export function genName(pre = "", post = ""): string {
   return pre + Math.floor(Math.random() * 100000) + post;
 }
 
-export async function inTmp(f: Function, keep = false) {
-  const tmpDir = makeTempDirSync();
+export async function inTmpDir(
+  f: (dir: string) => Promise<void> | void,
+  keepOnFailure = false
+) {
+  await inTmpDirs(
+    1,
+    async tmpDirs => {
+      await f(tmpDirs[0]);
+    },
+    keepOnFailure
+  );
+}
+export async function inTmpDirs(
+  count: number,
+  f: (dirs: string[]) => Promise<void> | void,
+  keepOnFailure = false
+) {
+  const tmpDirs = [];
+  for (let i = 0; i < count; i++) {
+    tmpDirs.push(makeTempDirSync());
+  }
+  function cleanup() {
+    tmpDirs.forEach(d => {
+      try {
+        removeAllSync(d);
+      } catch (e) {
+        if (e instanceof DenoError && e.kind === ErrorKind.NotFound) {
+          // not a problem
+        } else {
+          console.error("WARN:", e.message);
+        }
+      }
+    });
+  }
   try {
-    await f(tmpDir);
-  } finally {
-    if (!keep) {
-      await removeAll(tmpDir);
+    await f(tmpDirs);
+    cleanup();
+  } catch (e) {
+    if (!keepOnFailure) {
+      cleanup();
     }
+    throw e;
   }
 }
 class F {
