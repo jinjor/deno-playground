@@ -9,6 +9,7 @@ import {
   readlinkSync,
   FileInfo
 } from "deno";
+import { assert } from "https://deno.land/x/testing/testing.ts";
 
 export class Changes {
   added: string[] = [];
@@ -117,14 +118,18 @@ async function* run(
 function makeFilter({ test, ignore, ignoreDotFiles }: Options) {
   const testRegex = typeof test === "string" ? new RegExp(test) : test;
   const ignoreRegex = typeof ignore === "string" ? new RegExp(ignore) : ignore;
-  return function filter(f: FileInfo) {
-    if (ignoreDotFiles && f.name.charAt(0) === ".") {
+  return function filter(f: FileInfo, path: string) {
+    if (ignoreDotFiles) {
+      const splitted = path.split("/");
+      const name = f.name || splitted[splitted.length - 1];
+      if (name.charAt(0) === ".") {
+        return false;
+      }
+    }
+    if (!testRegex.test(path)) {
       return false;
     }
-    if (!testRegex.test(f.path)) {
-      return false;
-    }
-    if (ignoreRegex.test(f.path)) {
+    if (ignoreRegex.test(path)) {
       return false;
     }
     return true;
@@ -136,7 +141,7 @@ async function detectChanges(
   curr: any,
   dirs: string[],
   followSymlink: boolean,
-  filter: (info: FileInfo) => boolean,
+  filter: (f: FileInfo, path: string) => boolean,
   changes: Changes
 ): Promise<void> {
   await walk(prev, curr, dirs, followSymlink, filter, changes);
@@ -146,34 +151,38 @@ async function detectChanges(
 async function walk(
   prev: any,
   curr: any,
-  paths: (string | FileInfo)[],
+  files: (string | FileInfo)[],
   followSymlink: boolean,
-  filter: (info: FileInfo) => boolean,
+  filter: (f: FileInfo, path: string) => boolean,
   changes: Changes
 ): Promise<void> {
   const promises = [];
-  for (let p of paths) {
-    let info;
+  for (let f of files) {
     let path;
-    if (typeof p === "string") {
-      info = await (followSymlink ? stat : lstat)(p);
-      path = p;
+    let info;
+    if (typeof f === "string") {
+      path = f;
+      info = await (followSymlink ? stat : lstat)(f);
+    } else if (f.isSymlink() && followSymlink) {
+      path = await readlink(f.path);
+      info = await stat(path);
     } else {
-      info = p;
-      path = info.path;
+      path = f.path;
+      info = f;
     }
+    assert(!!path, "path not found");
     if (info.isDirectory()) {
       const files = await readDir(path);
       promises.push(walk(prev, curr, files, followSymlink, filter, changes));
     } else if (info.isFile()) {
-      if (filter(info)) {
-        curr[info.path] = info.modified || info.created;
-        if (!prev[info.path]) {
-          changes.added.push(info.path);
-        } else if (prev[info.path] < curr[info.path]) {
-          changes.modified.push(info.path);
+      if (filter(info, path)) {
+        curr[path] = info.modified || info.created;
+        if (!prev[path]) {
+          changes.added.push(path);
+        } else if (prev[path] < curr[path]) {
+          changes.modified.push(path);
         }
-        delete prev[info.path];
+        delete prev[path];
       }
     }
   }
@@ -182,25 +191,29 @@ async function walk(
 
 function collect(
   all: any,
-  paths: (string | FileInfo)[],
+  files: (string | FileInfo)[],
   followSymlink: boolean,
-  filter: (f: FileInfo) => boolean
+  filter: (f: FileInfo, path?: string) => boolean
 ): void {
-  for (let p of paths) {
-    let info;
+  for (let f of files) {
     let path;
-    if (typeof p === "string") {
-      info = (followSymlink ? statSync : lstatSync)(p);
-      path = p;
+    let info;
+    if (typeof f === "string") {
+      path = f;
+      info = (followSymlink ? statSync : lstatSync)(f);
+    } else if (f.isSymlink() && followSymlink) {
+      path = readlinkSync(f.path);
+      info = statSync(path);
     } else {
-      info = p;
-      path = info.path;
+      path = f.path;
+      info = f;
     }
+    assert(!!path, "path not found");
     if (info.isDirectory()) {
       collect(all, readDirSync(path), followSymlink, filter);
     } else if (info.isFile()) {
-      if (filter(info)) {
-        all[info.path] = info.modified || info.created;
+      if (filter(info, path)) {
+        all[path] = info.modified || info.created;
       }
     }
   }
