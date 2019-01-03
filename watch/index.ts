@@ -126,11 +126,13 @@ function makeFilter({ test, ignore, ignoreDotFiles }: Options) {
         return false;
       }
     }
-    if (!testRegex.test(path)) {
-      return false;
-    }
-    if (ignoreRegex.test(path)) {
-      return false;
+    if (f.isFile()) {
+      if (!testRegex.test(path)) {
+        return false;
+      }
+      if (ignoreRegex.test(path)) {
+        return false;
+      }
     }
     return true;
   };
@@ -158,12 +160,14 @@ async function walk(
 ): Promise<void> {
   const promises = [];
   for (let f of files) {
+    let linkPath;
     let path;
     let info;
     if (typeof f === "string") {
       path = f;
       info = await (followSymlink ? stat : lstat)(f);
     } else if (f.isSymlink() && followSymlink) {
+      linkPath = f.path;
       path = await readlink(f.path);
       info = await stat(path);
     } else {
@@ -171,19 +175,20 @@ async function walk(
       info = f;
     }
     assert(!!path, "path not found");
+    if (!filter(info, linkPath || path)) {
+      continue;
+    }
     if (info.isDirectory()) {
       const files = await readDir(path);
       promises.push(walk(prev, curr, files, followSymlink, filter, changes));
     } else if (info.isFile()) {
-      if (filter(info, path)) {
-        curr[path] = info.modified || info.created;
-        if (!prev[path]) {
-          changes.added.push(path);
-        } else if (prev[path] < curr[path]) {
-          changes.modified.push(path);
-        }
-        delete prev[path];
+      curr[path] = info.modified || info.created;
+      if (!prev[path]) {
+        changes.added.push(path);
+      } else if (prev[path] < curr[path]) {
+        changes.modified.push(path);
       }
+      delete prev[path];
     }
   }
   await Promise.all(promises);
@@ -196,12 +201,14 @@ function collect(
   filter: (f: FileInfo, path?: string) => boolean
 ): void {
   for (let f of files) {
+    let linkPath;
     let path;
     let info;
     if (typeof f === "string") {
       path = f;
       info = (followSymlink ? statSync : lstatSync)(f);
     } else if (f.isSymlink() && followSymlink) {
+      linkPath = f.path;
       path = readlinkSync(f.path);
       info = statSync(path);
     } else {
@@ -209,12 +216,13 @@ function collect(
       info = f;
     }
     assert(!!path, "path not found");
+    if (!filter(info, linkPath || path)) {
+      continue;
+    }
     if (info.isDirectory()) {
       collect(all, readDirSync(path), followSymlink, filter);
     } else if (info.isFile()) {
-      if (filter(info, path)) {
-        all[path] = info.modified || info.created;
-      }
+      all[path] = info.modified || info.created;
     }
   }
 }
