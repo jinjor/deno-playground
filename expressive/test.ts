@@ -2,7 +2,7 @@ import {
   test,
   assert,
   assertEqual
-} from "https://deno.land/x/testing/testing.ts";
+} from "https://raw.githubusercontent.com/denoland/deno_std/master/testing/mod.ts";
 import { Request, simplePathMatcher } from "index.ts";
 import { getType } from "mime.ts";
 import { throws } from "../assertion/assertion.ts";
