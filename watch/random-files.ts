@@ -4,7 +4,8 @@ import {
   writeFileSync,
   removeSync,
   symlinkSync,
-  mkdirSync
+  mkdirSync,
+  run
 } from "deno";
 import * as path from "https://deno.land/x/path/index.ts";
 
@@ -12,12 +13,14 @@ export function genName(pre = "", post = ""): string {
   return pre + Math.floor(Math.random() * 100000) + post;
 }
 
-export async function inTmp(f: Function) {
+export async function inTmp(f: Function, keep = false) {
   const tmpDir = makeTempDirSync();
   try {
     await f(tmpDir);
   } finally {
-    await removeAll(tmpDir);
+    if (!keep) {
+      await removeAll(tmpDir);
+    }
   }
 }
 class F {
@@ -77,4 +80,11 @@ export function genLink(
   const linkPath = path.join(dir, genName(options.prefix, options.postfix));
   symlinkSync(pathToFile, linkPath);
   return new F(linkPath, options.isDir);
+}
+export async function tree(...args: string[]): Promise<void> {
+  const process = run({
+    args: ["tree", ...args],
+    stdout: "inherit"
+  });
+  await process.status();
 }

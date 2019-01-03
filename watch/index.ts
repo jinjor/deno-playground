@@ -2,12 +2,12 @@ import {
   readDir,
   readlink,
   lstatSync,
-  stat,
   lstat,
   statSync,
   readDirSync,
   readlinkSync,
-  FileInfo
+  FileInfo,
+  stat
 } from "deno";
 import { assert } from "https://deno.land/x/testing/testing.ts";
 
@@ -165,11 +165,11 @@ async function walk(
     let info;
     if (typeof f === "string") {
       path = f;
-      info = await (followSymlink ? stat : lstat)(f);
+      info = await (followSymlink ? statTraverse : lstat)(f);
     } else if (f.isSymlink() && followSymlink) {
       linkPath = f.path;
-      path = await readlink(f.path);
-      info = await stat(path);
+      info = await statTraverse(f.path);
+      path = info.path;
     } else {
       path = f.path;
       info = f;
@@ -182,6 +182,9 @@ async function walk(
       const files = await readDir(path);
       promises.push(walk(prev, curr, files, followSymlink, filter, changes));
     } else if (info.isFile()) {
+      if (curr[path]) {
+        continue;
+      }
       curr[path] = info.modified || info.created;
       if (!prev[path]) {
         changes.added.push(path);
@@ -206,11 +209,11 @@ function collect(
     let info;
     if (typeof f === "string") {
       path = f;
-      info = (followSymlink ? statSync : lstatSync)(f);
+      info = (followSymlink ? statTraverseSync : lstatSync)(f);
     } else if (f.isSymlink() && followSymlink) {
       linkPath = f.path;
       path = readlinkSync(f.path);
-      info = statSync(path);
+      info = statTraverseSync(path);
     } else {
       path = f.path;
       info = f;
@@ -224,5 +227,27 @@ function collect(
     } else if (info.isFile()) {
       all[path] = info.modified || info.created;
     }
+  }
+}
+
+// Workaround for non-linux
+async function statTraverse(path: string): Promise<FileInfo> {
+  const info = await lstat(path);
+  if (info.isSymlink()) {
+    const targetPath = await readlink(path);
+    return statTraverse(targetPath);
+  } else {
+    info.path = path;
+    return info;
+  }
+}
+function statTraverseSync(path: string): FileInfo {
+  const info = lstatSync(path);
+  if (info.isSymlink()) {
+    const targetPath = readlinkSync(path);
+    return statTraverseSync(targetPath);
+  } else {
+    info.path = path;
+    return info;
   }
 }

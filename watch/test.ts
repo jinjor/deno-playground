@@ -1,7 +1,7 @@
 import { writeFile, remove, removeAll, makeTempDir } from "deno";
 import watch from "index.ts";
 import { test, assertEqual } from "https://deno.land/x/testing/testing.ts";
-import { inTmp, genFile, genDir, genLink } from "random-files.ts";
+import { inTmp, genFile, genDir, genLink, tree } from "random-files.ts";
 
 function delay(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
@@ -13,6 +13,7 @@ function assertChanges(changes, a, m, d) {
     assertEqual(changes.deleted.length, d);
   } catch (e) {
     console.log("expected:", `${a} ${m} ${d}`);
+    console.log("actual:", changes);
     throw e;
   }
 }
@@ -63,6 +64,7 @@ test(async function Symlink() {
         const f = genFile(anotherDir);
         const link1 = genLink(anotherDir, f.path);
         const link2 = genLink(tmpDir, link1.path);
+        const link3 = genLink(tmpDir, link2.path);
         await delay(1200);
         assertChanges(changes, 1, 0, 0);
         f.modify();
@@ -79,6 +81,10 @@ test(async function Symlink() {
         await delay(1200);
         assertChanges(changes, 0, 1, 0);
       }
+    } catch (e) {
+      await tree(tmpDir);
+      await tree(anotherDir);
+      throw e;
     } finally {
       end();
     }
