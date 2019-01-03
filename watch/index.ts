@@ -3,41 +3,66 @@ import {
   readlink,
   lstatSync,
   lstat,
-  statSync,
   readDirSync,
   readlinkSync,
-  FileInfo,
-  stat
+  FileInfo
 } from "deno";
 import { assert } from "https://deno.land/x/testing/testing.ts";
 
+/** The result of checking in one loop */
 export class Changes {
+  /** Paths of added files */
   added: string[] = [];
+  /** Paths of modified files */
   modified: string[] = [];
+  /** Paths of deleted files */
   deleted: string[] = [];
+  /** The time[posix ms] when the checking started. */
   startTime: number;
+  /** The time[posix ms] when the checking ended. */
   endTime: number;
+  /** Current file count */
   fileCount = 0;
+  /** added + modified + deleted */
   get length(): number {
     return this.added.length + this.modified.length + this.deleted.length;
   }
+  /** all changed paths */
   get all(): string[] {
     return [...this.added, ...this.modified, ...this.deleted];
   }
+  /** The time[ms] took for checking. */
   get time() {
     return this.endTime - this.startTime;
   }
 }
 
+/** Options */
 export interface Options {
+  /** The minimum interval[ms] of checking loop.
+   * The next checking can be delayed until user program ends.
+   *
+   * |<------------------ interval ----------------->|<---------------
+   * |<-- checking -->|                              |<-- checking -->
+   *                  |<--- user program --->|
+   *
+   *
+   * |<---------- interval --------->|       |<-----------------------
+   * |<-- checking -->|                      |<-- checking -->
+   *                  |<--- user program --->|
+   */
   interval?: number;
+  /** If true, watcher checks the symlinked files/directories too. */
   followSymlink?: boolean;
+  /** Ignores something like .gitignore, .vscode, etc. */
   ignoreDotFiles?: boolean;
-  log?: (s: string) => void;
+  /** Path to search in regex (ex. "\.(ts|css)$") */
   test?: RegExp | string;
+  /** Path to ignore in regex. */
   ignore?: RegExp | string;
 }
 
+/** The watcher */
 export interface Watcher extends AsyncIterable<Changes> {
   start(callback: (changes: Changes) => Promise<void> | void): () => void;
 }
@@ -50,6 +75,24 @@ const defaultOptions = {
   ignore: /$^/
 };
 
+/**
+ * Watch directories and detect changes.
+ * @example
+ * // Basic usage.
+ * for await (const changes of watch("src")) {
+ *   console.log(changes.added);
+ *   console.log(changes.modified);
+ *   console.log(changes.deleted);
+ * }
+ * @example
+ * // Kill watcher from outside of the loop.
+ * const end = watch("src").start(changes => {
+ *   console.log(changes);
+ * });
+ * end();
+ * @param dirs
+ * @param options
+ */
 export default function watch(
   dirs: string | string[],
   options?: Options

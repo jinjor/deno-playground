@@ -1,18 +1,26 @@
 # Watch
 
+A pure deno file watcher.
+
 ## Example
 
 ```typescript
-for await (const changes of watch(".")) {
-  console.log(changes);
+for await (const changes of watch("src")) {
+  console.log(changes.added);
+  console.log(changes.modified);
+  console.log(changes.deleted);
 }
 ```
 
 ```typescript
-watch(tmpDir).start(changes => {
+const end = watch("src").start(changes => {
   console.log(changes);
 });
 ```
+
+## Options
+
+Written in the [source code](./index.ts).
 
 ## Benchmark
 
