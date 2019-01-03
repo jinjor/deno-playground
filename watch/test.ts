@@ -1,5 +1,6 @@
 import {
   writeFile,
+  symlink,
   mkdir,
   remove,
   removeAll,
@@ -54,6 +55,42 @@ test(async function Watch() {
     await removeAll(tmpDir);
   }
 });
+
+// test(async function Symlink() {
+//   const tmpDir = await makeTempDir();
+//   const anotherDir = await makeTempDir();
+//   try {
+//     let added = [];
+//     let modified = [];
+//     let deleted = [];
+//     const end = watch(tmpDir, {
+//       followSymlink: true
+//     }).start(changes => {
+//       added = added.concat(changes.added);
+//       modified = modified.concat(changes.modified);
+//       deleted = deleted.concat(changes.deleted);
+//     });
+//     function assertResult(a, m, d) {
+//       assertEqual(added.length, a);
+//       assertEqual(modified.length, m);
+//       assertEqual(deleted.length, d);
+//     }
+//     try {
+//       {
+//         const filePath = path.join(anotherDir, randomName());
+//         const linkPath = path.join(tmpDir, randomName());
+//         await writeFile(filePath, new Uint8Array(0));
+//         await symlink(filePath, linkPath);
+//         await new Promise(resolve => setTimeout(resolve, 1200));
+//         assertResult(1, 0, 0);
+//       }
+//     } finally {
+//       end();
+//     }
+//   } finally {
+//     await removeAll(tmpDir);
+//   }
+// });
 
 test(async function filter() {
   const tmpDir = await makeTempDir();

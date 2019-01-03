@@ -2,7 +2,9 @@ import {
   readDir,
   readlink,
   lstatSync,
+  stat,
   lstat,
+  statSync,
   readDirSync,
   readlinkSync,
   FileInfo
@@ -86,13 +88,10 @@ async function* run(
 ) {
   const { interval, followSymlink } = options;
   const filter = makeFilter(options);
-  const allFiles = {};
   let lastStartTime = Date.now();
-  for (let dir of dirs) {
-    let files = {};
-    collect(files, dir, followSymlink, filter);
-    allFiles[dir] = files;
-  }
+  let files = {};
+  collect(files, dirs, followSymlink, filter);
+
   while (!state.abort) {
     let waitTime = Math.max(0, interval - (Date.now() - lastStartTime));
     await new Promise(resolve => {
@@ -102,13 +101,12 @@ async function* run(
     lastStartTime = Date.now();
     let changes = new Changes();
     changes.startTime = lastStartTime;
-    for (let dir in allFiles) {
-      const files = allFiles[dir];
-      changes.fileCount += Object.keys(files).length;
-      const newFiles = {};
-      await detectChanges(files, newFiles, dir, followSymlink, filter, changes);
-      allFiles[dir] = newFiles;
-    }
+
+    changes.fileCount = Object.keys(files).length;
+    const newFiles = {};
+    await detectChanges(files, newFiles, dirs, followSymlink, filter, changes);
+    files = newFiles;
+
     changes.endTime = Date.now();
     if (changes.length) {
       yield changes;
@@ -136,77 +134,74 @@ function makeFilter({ test, ignore, ignoreDotFiles }: Options) {
 async function detectChanges(
   prev: any,
   curr: any,
-  dir: string,
+  dirs: string[],
   followSymlink: boolean,
   filter: (info: FileInfo) => boolean,
   changes: Changes
 ): Promise<void> {
-  await walk(prev, curr, dir, followSymlink, filter, changes);
+  await walk(prev, curr, dirs, followSymlink, filter, changes);
   Array.prototype.push.apply(changes.deleted, Object.keys(prev));
 }
 
 async function walk(
   prev: any,
   curr: any,
-  dir: string,
+  paths: (string | FileInfo)[],
   followSymlink: boolean,
   filter: (info: FileInfo) => boolean,
   changes: Changes
 ): Promise<void> {
-  let files = [];
-  let dirInfo = await lstat(dir);
-  if (dirInfo.isDirectory()) {
-    files = await readDir(dir);
-  } else if (dirInfo.isSymlink()) {
-    if (followSymlink) {
-      const path = await readlink(dir);
-      files = await readDir(path);
-    }
-  }
   const promises = [];
-  for (let f of files) {
-    if (!filter(f)) {
-      continue;
+  for (let p of paths) {
+    let info;
+    let path;
+    if (typeof p === "string") {
+      info = await (followSymlink ? stat : lstat)(p);
+      path = p;
+    } else {
+      info = p;
+      path = info.path;
     }
-    if (f.isDirectory() || f.isSymlink()) {
-      promises.push(walk(prev, curr, f.path, followSymlink, filter, changes));
-      continue;
+    if (info.isDirectory()) {
+      const files = await readDir(path);
+      promises.push(walk(prev, curr, files, followSymlink, filter, changes));
+    } else if (info.isFile()) {
+      if (filter(info)) {
+        curr[info.path] = info.modified || info.created;
+        if (!prev[info.path]) {
+          changes.added.push(info.path);
+        } else if (prev[info.path] < curr[info.path]) {
+          changes.modified.push(info.path);
+        }
+        delete prev[info.path];
+      }
     }
-    curr[f.path] = f.modified || f.created;
-    if (!prev[f.path]) {
-      changes.added.push(f.path);
-    } else if (prev[f.path] < curr[f.path]) {
-      changes.modified.push(f.path);
-    }
-    delete prev[f.path];
   }
   await Promise.all(promises);
 }
 
 function collect(
   all: any,
-  dir: string,
+  paths: (string | FileInfo)[],
   followSymlink: boolean,
   filter: (f: FileInfo) => boolean
 ): void {
-  let files = [];
-  let dirInfo = lstatSync(dir);
-  if (dirInfo.isDirectory()) {
-    files = readDirSync(dir);
-  } else if (dirInfo.isSymlink()) {
-    if (followSymlink) {
-      const path = readlinkSync(dir);
-      files = readDirSync(path);
+  for (let p of paths) {
+    let info;
+    let path;
+    if (typeof p === "string") {
+      info = (followSymlink ? statSync : lstatSync)(p);
+      path = p;
+    } else {
+      info = p;
+      path = info.path;
     }
-  }
-  for (let f of files) {
-    if (!filter(f)) {
-      continue;
+    if (info.isDirectory()) {
+      collect(all, readDirSync(path), followSymlink, filter);
+    } else if (info.isFile()) {
+      if (filter(info)) {
+        all[info.path] = info.modified || info.created;
+      }
     }
-    if (f.isDirectory() || f.isSymlink()) {
-      collect(all, f.path, followSymlink, filter);
-      continue;
-    }
-    all[f.path] = f.modified || f.created;
   }
 }
