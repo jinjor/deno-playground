@@ -1,1 +1,1 @@
-import "index.ts";
+import "mod.ts";

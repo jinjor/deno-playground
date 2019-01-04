@@ -1,7 +1,7 @@
 # Expressive
 
 ```typescript
-import * as expressive from "https://raw.githubusercontent.com/jinjor/deno-playground/master/expressive/index.ts";
+import * as expressive from "https://raw.githubusercontent.com/jinjor/deno-playground/master/expressive/mod.ts";
 
 (async () => {
   const port = 3000;

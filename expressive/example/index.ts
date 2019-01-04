@@ -1,4 +1,4 @@
-import * as expressive from "../index.ts";
+import * as expressive from "../mod.ts";
 
 (async () => {
   const port = 3000;
