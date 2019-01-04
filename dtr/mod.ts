@@ -8,9 +8,3 @@ export function lib(
   permissions: Permission[]
 ): void {}
 export function task(name: string, command: string) {}
-export function github(repo: string, path: string): string {
-  repo = repo.split("@")[0];
-  const branch = repo.split("@")[1] || "master";
-  return `https://raw.githubusercontent.com/${repo}/${branch}/${path}`;
-}
-export function x() {}
