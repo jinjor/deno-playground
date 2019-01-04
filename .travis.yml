@@ -13,4 +13,4 @@ install:
 script:
   - deno -v
   - deno test.ts --allow-env --allow-write
-  - deno task-runner/test.ts test --cwd=task-runner --allow-run
+  - deno task-runner/example.ts all --cwd=task-runner --allow-run
