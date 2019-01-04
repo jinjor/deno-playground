@@ -65,6 +65,9 @@ class Sequence implements Command {
     );
   }
   async run(args, options) {
+    if (args.length) {
+      throw new Error("Cannot pass args to sequential tasks.");
+    }
     for (let command of this.commands) {
       await command.run([], options);
     }
@@ -83,6 +86,9 @@ class Parallel implements Command {
     );
   }
   async run(args, options) {
+    if (args.length) {
+      throw new Error("Cannot pass args to parallel tasks.");
+    }
     await Promise.all(this.commands.map(c => c.run([], options)));
   }
 }
