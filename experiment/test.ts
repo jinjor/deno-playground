@@ -1,8 +1,4 @@
-import {
-  test,
-  assert,
-  assertEqual
-} from "https://raw.githubusercontent.com/denoland/deno_std/master/testing/mod.ts";
+import { test, assert, assertEqual } from "https://deno.land/x/testing/mod.ts";
 import { delay } from "cancelable.ts";
 
 test(function CancerablePromise() {
