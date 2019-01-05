@@ -1,6 +1,8 @@
-import { args, exit, ProcessStatus } from "deno";
+import { args, exit, ProcessStatus, Closer } from "deno";
 import * as deno from "deno";
 import * as flags from "https://deno.land/x/flags/index.ts";
+import watch from "https://raw.githubusercontent.com/jinjor/deno-watch/1.0.0/mod.ts";
+import * as path from "https://deno.land/x/path/index.ts";
 
 type Tasks = { [name: string]: Command };
 interface ResolvingState {
@@ -13,7 +15,7 @@ class ProcessError extends Error {
 }
 interface Command {
   resolveRef(tasks: Tasks, state: ResolvingState): Command;
-  run(args: string[], { cwd: string }): Promise<void>;
+  run(args: string[], context: RunContext): Promise<void>;
 }
 class Single implements Command {
   constructor(public name: string, public args: string[]) {}
@@ -39,14 +41,16 @@ class Single implements Command {
       checked: new Set(checked).add(this.name)
     });
   }
-  async run(args, { cwd }) {
+  async run(args, { cwd, resources }) {
     const p = deno.run({
       args: [this.name, ...this.args, ...args],
       cwd: cwd,
       stdout: "inherit",
       stderr: "inherit"
     });
+    resources.add(p);
     const status = await p.status();
+    resources.delete(p);
     if (!status.success) {
       throw new ProcessError(status);
     }
@@ -64,12 +68,12 @@ class Sequence implements Command {
       })
     );
   }
-  async run(args, options) {
+  async run(args, context) {
     if (args.length) {
       throw new Error("Cannot pass args to sequential tasks.");
     }
     for (let command of this.commands) {
-      await command.run([], options);
+      await command.run([], context);
     }
   }
 }
@@ -85,18 +89,47 @@ class Parallel implements Command {
       })
     );
   }
-  async run(args, options) {
+  async run(args, context) {
     if (args.length) {
       throw new Error("Cannot pass args to parallel tasks.");
     }
-    await Promise.all(this.commands.map(c => c.run([], options)));
+    await Promise.all(this.commands.map(c => c.run([], context)));
+  }
+}
+class Watcher implements Command {
+  constructor(public dirs: string[], public command: Command) {}
+  resolveRef(tasks, state) {
+    return new Watcher(this.dirs, this.command.resolveRef(tasks, state));
+  }
+  async run(args, context) {
+    const dirs_ = this.dirs.map(d => {
+      return path.join(context.cwd, d);
+    });
+    for await (const _ of watch(dirs_)) {
+      for (let resource of context.resources) {
+        resource.close();
+      }
+      await this.command.run(args, context);
+    }
   }
 }
 
 const tasks: Tasks = {};
 let runCalled = false;
+class TaskExtender {
+  constructor(public tasks: Tasks, public name: string) {}
+  when(dirs: string | string[]) {
+    if (typeof dirs === "string") {
+      dirs = [dirs];
+    }
+    this.tasks[this.name] = new Watcher(dirs, this.tasks[this.name]);
+  }
+}
 
-export function task(name: string, ...rawCommands: (string | string[])[]) {
+export function task(
+  name: string,
+  ...rawCommands: (string | string[])[]
+): TaskExtender {
   if (name.split(/\s/).length > 1) {
     throw new Error(`Task name [${name}] is invalid.`);
   }
@@ -104,6 +137,7 @@ export function task(name: string, ...rawCommands: (string | string[])[]) {
     throw new Error(`Task name [${name}] is duplicated.`);
   }
   tasks[name] = makeCommand(rawCommands);
+  return new TaskExtender(tasks, name);
 }
 
 function makeCommand(rawCommands: (string | string[])[]): Command {
@@ -122,16 +156,21 @@ function makeNonSequenceCommand(rawCommand: string | string[]): Command {
   return new Parallel(rawCommand.map(Single.fromRaw));
 }
 
-interface Options {
+interface RunContext {
   cwd: string;
+  resources: Set<Closer>;
 }
-export async function run(taskName: string, args: string[], options: Options) {
+export async function run(
+  taskName: string,
+  args: string[],
+  context: RunContext
+) {
   runCalled = true;
   let command = tasks[taskName];
   if (!command) {
     throw new Error(`Task [${taskName}] not found.`);
   }
-  await command.resolveRef(tasks, { checked: new Set() }).run(args, options);
+  await command.resolveRef(tasks, { checked: new Set() }).run(args, context);
 }
 
 new Promise(resolve => setTimeout(resolve, 0))
@@ -147,8 +186,11 @@ new Promise(resolve => setTimeout(resolve, 0))
       console.log("Usage: task_file.ts task_name [--cwd]");
       exit(0);
     }
-
-    await run(taskName, taskArgs, { cwd });
+    const context = {
+      cwd,
+      resources: new Set()
+    };
+    await run(taskName, taskArgs, context);
   })
   .catch(e => {
     console.error(e.message);
