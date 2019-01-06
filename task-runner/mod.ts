@@ -50,20 +50,16 @@ class Single implements Command {
       }
       throw e;
     }
-    let killed = false;
     const closer = {
       close() {
-        (async () => {
-          killed = true;
-          await kill(p);
-        })();
+        kill(p);
       }
     };
     resources.add(closer);
     const status = await p.status();
     p.close();
     resources.delete(closer);
-    if (!status.success && !killed) {
+    if (!status.success) {
       throw new ProcessError(p.pid, p.rid, status);
     }
   }
@@ -155,10 +151,14 @@ class SyncWatcher implements Command {
       }
     };
     context.resources.add(closer);
-    await this.command.run(args, { ...context, resources: childResources });
+    await this.command
+      .run(args, { ...context, resources: childResources })
+      .catch(_ => {});
     for await (const _ of watch(dirs_)) {
       closeResouces(childResources);
-      await this.command.run(args, { ...context, resources: childResources });
+      await this.command
+        .run(args, { ...context, resources: childResources })
+        .catch(_ => {});
     }
     context.resources.delete(closer);
   }
@@ -179,10 +179,14 @@ class AsyncWatcher implements Command {
       }
     };
     context.resources.add(closer);
-    this.command.run(args, { ...context, resources: childResources });
+    this.command
+      .run(args, { ...context, resources: childResources })
+      .catch(_ => {});
     for await (const _ of watch(dirs_)) {
       closeResouces(childResources);
-      this.command.run(args, { ...context, resources: childResources });
+      this.command
+        .run(args, { ...context, resources: childResources })
+        .catch(_ => {});
     }
     context.resources.delete(closer);
   }
@@ -199,13 +203,13 @@ const tasks: Tasks = {};
 let runCalled = false;
 class TaskExtender {
   constructor(public tasks: Tasks, public name: string) {}
-  when(dirs: string | string[]) {
+  watchSync(dirs: string | string[]) {
     if (typeof dirs === "string") {
       dirs = [dirs];
     }
     this.tasks[this.name] = new SyncWatcher(dirs, this.tasks[this.name]);
   }
-  restart(dirs: string | string[]) {
+  watch(dirs: string | string[]) {
     if (typeof dirs === "string") {
       dirs = [dirs];
     }
