@@ -8,9 +8,9 @@ import { task } from "mod.ts";
 task("prepare", "echo preparing...");
 task("counter", "deno counter.ts");
 task("thumb", "deno https://deno.land/thumb.ts");
-task("all", "prepare", ["counter alice", "counter bob"], "thumb");
-//          ^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^
-//          1st task   2nd task (parallel)               3rd task
+task("all", "$prepare", ["$counter alice", "$counter bob"], "$thumb");
+//          ^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^
+//          1st task    2nd task (parallel)                 3rd task
 ```
 
 ```
