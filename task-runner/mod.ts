@@ -155,7 +155,7 @@ class SyncWatcher implements Command {
     const childResources = new Set();
     const closer = {
       close() {
-        closeResouces(childResources);
+        throw new Error("Nested watchers not supported.");
       }
     };
     context.resources.add(closer);
@@ -191,7 +191,7 @@ class AsyncWatcher implements Command {
     const childResources = new Set();
     const closer = {
       close() {
-        closeResouces(childResources);
+        throw new Error("Nested watchers not supported.");
       }
     };
     context.resources.add(closer);
