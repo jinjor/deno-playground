@@ -37,6 +37,7 @@ class Single implements Command {
       }
       throw e;
     }
+    console.log("pid:", p.pid);
     resources.add(p);
     const status = await p.status();
     resources.delete(p);
@@ -107,21 +108,56 @@ class Parallel implements Command {
   }
 }
 class Watcher implements Command {
-  constructor(public dirs: string[], public command: Command) {}
+  constructor(
+    public waitForCommand: boolean,
+    public dirs: string[],
+    public command: Command
+  ) {}
   resolveRef(tasks, state) {
-    return new Watcher(this.dirs, this.command.resolveRef(tasks, state));
+    return new Watcher(
+      this.waitForCommand,
+      this.dirs,
+      this.command.resolveRef(tasks, state)
+    );
   }
   async run(args, context) {
     const dirs_ = this.dirs.map(d => {
       return path.join(context.cwd, d);
     });
-    for await (const _ of watch(dirs_)) {
-      for (let resource of context.resources) {
-        resource.close();
+    const childResources = new Set();
+    const closer = {
+      close() {
+        closeResouces(childResources);
       }
-      await this.command.run(args, context);
+    };
+    context.resources.add(closer);
+    const runChild = async () => {
+      await this.command.run(args, { ...context, resources: childResources });
+    };
+    if (this.waitForCommand) {
+      await runChild();
+    } else {
+      runChild();
     }
+    for await (const _ of watch(dirs_)) {
+      closeResouces(childResources);
+      if (this.waitForCommand) {
+        await runChild();
+      } else {
+        runChild();
+      }
+    }
+    context.resources.delete(closer);
   }
+}
+function closeResouces(resources: Set<Closer>) {
+  for (let resource of resources) {
+    // if ((resource as any).rid) {
+    //   console.log((resource as any).rid);
+    // }
+    resource.close();
+  }
+  resources.clear();
 }
 
 const tasks: Tasks = {};
@@ -132,7 +168,13 @@ class TaskExtender {
     if (typeof dirs === "string") {
       dirs = [dirs];
     }
-    this.tasks[this.name] = new Watcher(dirs, this.tasks[this.name]);
+    this.tasks[this.name] = new Watcher(true, dirs, this.tasks[this.name]);
+  }
+  restart(dirs: string | string[]) {
+    if (typeof dirs === "string") {
+      dirs = [dirs];
+    }
+    this.tasks[this.name] = new Watcher(false, dirs, this.tasks[this.name]);
   }
 }
 
