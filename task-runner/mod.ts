@@ -1,4 +1,12 @@
-import { args, exit, ProcessStatus, Closer, DenoError, ErrorKind } from "deno";
+import {
+  args,
+  exit,
+  ProcessStatus,
+  Closer,
+  DenoError,
+  ErrorKind,
+  Process
+} from "deno";
 import * as deno from "deno";
 import * as flags from "https://deno.land/x/flags/index.ts";
 import watch from "https://raw.githubusercontent.com/jinjor/deno-watch/1.0.0/mod.ts";
@@ -9,7 +17,12 @@ interface ResolvingState {
   checked: Set<string>;
 }
 class ProcessError extends Error {
-  constructor(public status: ProcessStatus, public taskName?: string) {
+  constructor(
+    public pid: number,
+    public rid: number,
+    public status: ProcessStatus,
+    public taskName?: string
+  ) {
     super("Process exited with status code " + status.code);
   }
 }
@@ -37,15 +50,34 @@ class Single implements Command {
       }
       throw e;
     }
-    console.log("pid:", p.pid);
-    resources.add(p);
+    let killed = false;
+    const closer = {
+      close() {
+        (async () => {
+          killed = true;
+          await kill(p);
+        })();
+      }
+    };
+    resources.add(closer);
     const status = await p.status();
-    resources.delete(p);
-    if (!status.success) {
-      throw new ProcessError(status);
+    p.close();
+    resources.delete(closer);
+    if (!status.success && !killed) {
+      throw new ProcessError(p.pid, p.rid, status);
     }
   }
 }
+async function kill(p: Process) {
+  const k = deno.run({
+    args: ["kill", `${p.pid}`],
+    stdout: "inherit",
+    stderr: "inherit"
+  });
+  await k.status();
+  k.close();
+}
+
 class Ref implements Command {
   constructor(public name: string, public args: string[]) {}
   resolveRef(tasks, { checked }) {
@@ -107,18 +139,10 @@ class Parallel implements Command {
     await Promise.all(this.commands.map(c => c.run([], context)));
   }
 }
-class Watcher implements Command {
-  constructor(
-    public waitForCommand: boolean,
-    public dirs: string[],
-    public command: Command
-  ) {}
+class SyncWatcher implements Command {
+  constructor(public dirs: string[], public command: Command) {}
   resolveRef(tasks, state) {
-    return new Watcher(
-      this.waitForCommand,
-      this.dirs,
-      this.command.resolveRef(tasks, state)
-    );
+    return new SyncWatcher(this.dirs, this.command.resolveRef(tasks, state));
   }
   async run(args, context) {
     const dirs_ = this.dirs.map(d => {
@@ -131,30 +155,41 @@ class Watcher implements Command {
       }
     };
     context.resources.add(closer);
-    const runChild = async () => {
-      await this.command.run(args, { ...context, resources: childResources });
-    };
-    if (this.waitForCommand) {
-      await runChild();
-    } else {
-      runChild();
-    }
+    await this.command.run(args, { ...context, resources: childResources });
     for await (const _ of watch(dirs_)) {
       closeResouces(childResources);
-      if (this.waitForCommand) {
-        await runChild();
-      } else {
-        runChild();
-      }
+      await this.command.run(args, { ...context, resources: childResources });
     }
     context.resources.delete(closer);
   }
 }
+class AsyncWatcher implements Command {
+  constructor(public dirs: string[], public command: Command) {}
+  resolveRef(tasks, state) {
+    return new AsyncWatcher(this.dirs, this.command.resolveRef(tasks, state));
+  }
+  async run(args, context) {
+    const dirs_ = this.dirs.map(d => {
+      return path.join(context.cwd, d);
+    });
+    const childResources = new Set();
+    const closer = {
+      close() {
+        closeResouces(childResources);
+      }
+    };
+    context.resources.add(closer);
+    this.command.run(args, { ...context, resources: childResources });
+    for await (const _ of watch(dirs_)) {
+      closeResouces(childResources);
+      this.command.run(args, { ...context, resources: childResources });
+    }
+    context.resources.delete(closer);
+  }
+}
+
 function closeResouces(resources: Set<Closer>) {
   for (let resource of resources) {
-    // if ((resource as any).rid) {
-    //   console.log((resource as any).rid);
-    // }
     resource.close();
   }
   resources.clear();
@@ -168,13 +203,13 @@ class TaskExtender {
     if (typeof dirs === "string") {
       dirs = [dirs];
     }
-    this.tasks[this.name] = new Watcher(true, dirs, this.tasks[this.name]);
+    this.tasks[this.name] = new SyncWatcher(dirs, this.tasks[this.name]);
   }
   restart(dirs: string | string[]) {
     if (typeof dirs === "string") {
       dirs = [dirs];
     }
-    this.tasks[this.name] = new Watcher(false, dirs, this.tasks[this.name]);
+    this.tasks[this.name] = new AsyncWatcher(dirs, this.tasks[this.name]);
   }
 }
 
