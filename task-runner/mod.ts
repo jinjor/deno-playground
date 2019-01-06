@@ -136,9 +136,17 @@ class Parallel implements Command {
   }
 }
 class SyncWatcher implements Command {
-  constructor(public dirs: string[], public command: Command) {}
+  constructor(
+    public dirs: string[],
+    public watchOptions,
+    public command: Command
+  ) {}
   resolveRef(tasks, state) {
-    return new SyncWatcher(this.dirs, this.command.resolveRef(tasks, state));
+    return new SyncWatcher(
+      this.dirs,
+      this.watchOptions,
+      this.command.resolveRef(tasks, state)
+    );
   }
   async run(args, context) {
     const dirs_ = this.dirs.map(d => {
@@ -164,9 +172,17 @@ class SyncWatcher implements Command {
   }
 }
 class AsyncWatcher implements Command {
-  constructor(public dirs: string[], public command: Command) {}
+  constructor(
+    public dirs: string[],
+    public watchOptions: any,
+    public command: Command
+  ) {}
   resolveRef(tasks, state) {
-    return new AsyncWatcher(this.dirs, this.command.resolveRef(tasks, state));
+    return new AsyncWatcher(
+      this.dirs,
+      this.watchOptions,
+      this.command.resolveRef(tasks, state)
+    );
   }
   async run(args, context) {
     const dirs_ = this.dirs.map(d => {
@@ -182,7 +198,7 @@ class AsyncWatcher implements Command {
     this.command
       .run(args, { ...context, resources: childResources })
       .catch(_ => {});
-    for await (const _ of watch(dirs_)) {
+    for await (const _ of watch(dirs_, this.watchOptions)) {
       closeResouces(childResources);
       this.command
         .run(args, { ...context, resources: childResources })
@@ -203,17 +219,25 @@ const tasks: Tasks = {};
 let runCalled = false;
 class TaskExtender {
   constructor(public tasks: Tasks, public name: string) {}
-  watchSync(dirs: string | string[]) {
+  watchSync(dirs: string | string[], watchOptions = {}) {
     if (typeof dirs === "string") {
       dirs = [dirs];
     }
-    this.tasks[this.name] = new SyncWatcher(dirs, this.tasks[this.name]);
+    this.tasks[this.name] = new SyncWatcher(
+      dirs,
+      watchOptions,
+      this.tasks[this.name]
+    );
   }
-  watch(dirs: string | string[]) {
+  watch(dirs: string | string[], watchOptions = {}) {
     if (typeof dirs === "string") {
       dirs = [dirs];
     }
-    this.tasks[this.name] = new AsyncWatcher(dirs, this.tasks[this.name]);
+    this.tasks[this.name] = new AsyncWatcher(
+      dirs,
+      watchOptions,
+      this.tasks[this.name]
+    );
   }
 }
 
