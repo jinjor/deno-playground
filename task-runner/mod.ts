@@ -1,4 +1,4 @@
-import { args, exit, ProcessStatus, Closer } from "deno";
+import { args, exit, ProcessStatus, Closer, DenoError, ErrorKind } from "deno";
 import * as deno from "deno";
 import * as flags from "https://deno.land/x/flags/index.ts";
 import watch from "https://raw.githubusercontent.com/jinjor/deno-watch/1.0.0/mod.ts";
@@ -19,17 +19,38 @@ interface Command {
 }
 class Single implements Command {
   constructor(public name: string, public args: string[]) {}
-  static fromRaw(raw: string) {
-    const splitted = raw.split(/\s/);
-    if (!splitted.length) {
-      throw new Error("Command should not be empty.");
-    }
-    return new Single(splitted[0], splitted.splice(1));
+  resolveRef(tasks, { checked }) {
+    return this;
   }
+  async run(args, { cwd, resources }) {
+    let p;
+    try {
+      p = deno.run({
+        args: [this.name, ...this.args, ...args],
+        cwd: cwd,
+        stdout: "inherit",
+        stderr: "inherit"
+      });
+    } catch (e) {
+      if (e instanceof DenoError && e.kind === ErrorKind.NotFound) {
+        throw new Error(`Command [${this.name}] not found.`);
+      }
+      throw e;
+    }
+    resources.add(p);
+    const status = await p.status();
+    resources.delete(p);
+    if (!status.success) {
+      throw new ProcessError(status);
+    }
+  }
+}
+class Ref implements Command {
+  constructor(public name: string, public args: string[]) {}
   resolveRef(tasks, { checked }) {
     let command = tasks[this.name];
     if (!command) {
-      return this;
+      throw new Error(`Task [${this.name}] is not defined.`);
     }
     if (checked.has(this.name)) {
       throw new Error(`Task [${this.name}] is in a reference loop.`);
@@ -41,19 +62,8 @@ class Single implements Command {
       checked: new Set(checked).add(this.name)
     });
   }
-  async run(args, { cwd, resources }) {
-    const p = deno.run({
-      args: [this.name, ...this.args, ...args],
-      cwd: cwd,
-      stdout: "inherit",
-      stderr: "inherit"
-    });
-    resources.add(p);
-    const status = await p.status();
-    resources.delete(p);
-    if (!status.success) {
-      throw new ProcessError(status);
-    }
+  async run(args, options) {
+    throw new Error("Ref should be resolved before running.");
   }
 }
 class Sequence implements Command {
@@ -151,9 +161,25 @@ function makeCommand(rawCommands: (string | string[])[]): Command {
 }
 function makeNonSequenceCommand(rawCommand: string | string[]): Command {
   if (typeof rawCommand === "string") {
-    return Single.fromRaw(rawCommand);
+    return makeSingleCommand(rawCommand);
   }
-  return new Parallel(rawCommand.map(Single.fromRaw));
+  return new Parallel(rawCommand.map(makeSingleCommand));
+}
+function makeSingleCommand(raw: string) {
+  const splitted = raw.split(/\s/);
+  if (!splitted.length) {
+    throw new Error("Command should not be empty.");
+  }
+  const name = splitted[0];
+  const args = splitted.splice(1);
+  if (name.charAt(0) === "$") {
+    const taskName = name.slice(1);
+    if (!taskName.length) {
+      throw new Error("Task name should not be empty.");
+    }
+    return new Ref(taskName, args);
+  }
+  return new Single(name, args);
 }
 
 interface RunContext {
