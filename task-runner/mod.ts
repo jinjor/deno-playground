@@ -33,7 +33,7 @@ class Single implements Command {
       });
     } catch (e) {
       if (e instanceof DenoError && e.kind === ErrorKind.NotFound) {
-        throw new Error(`Command [${this.name}] not found.`);
+        throw new Error(`Command "${this.name}" not found.`);
       }
       throw e;
     }
@@ -50,10 +50,10 @@ class Ref implements Command {
   resolveRef(tasks, { checked }) {
     let command = tasks[this.name];
     if (!command) {
-      throw new Error(`Task [${this.name}] is not defined.`);
+      throw new Error(`Task "${this.name}" is not defined.`);
     }
     if (checked.has(this.name)) {
-      throw new Error(`Task [${this.name}] is in a reference loop.`);
+      throw new Error(`Task "${this.name}" is in a reference loop.`);
     }
     if (command instanceof Single) {
       command = new Single(command.name, command.args.concat(this.args));
@@ -141,10 +141,10 @@ export function task(
   ...rawCommands: (string | string[])[]
 ): TaskExtender {
   if (name.split(/\s/).length > 1) {
-    throw new Error(`Task name [${name}] is invalid.`);
+    throw new Error(`Task name "${name}" is invalid.`);
   }
   if (task[name]) {
-    throw new Error(`Task name [${name}] is duplicated.`);
+    throw new Error(`Task name "${name}" is duplicated.`);
   }
   tasks[name] = makeCommand(rawCommands);
   return new TaskExtender(tasks, name);
@@ -194,7 +194,7 @@ export async function run(
   runCalled = true;
   let command = tasks[taskName];
   if (!command) {
-    throw new Error(`Task [${taskName}] not found.`);
+    throw new Error(`Task "${taskName}" not found.`);
   }
   await command.resolveRef(tasks, { checked: new Set() }).run(args, context);
 }
