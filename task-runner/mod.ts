@@ -13,8 +13,9 @@ import watch from "https://raw.githubusercontent.com/jinjor/deno-watch/1.0.0/mod
 import * as path from "https://deno.land/x/path/index.ts";
 
 type Tasks = { [name: string]: Command };
-interface ResolvingState {
+interface ResolveContext {
   checked: Set<string>;
+  hasWatcher: boolean;
 }
 class ProcessError extends Error {
   constructor(
@@ -27,12 +28,12 @@ class ProcessError extends Error {
   }
 }
 interface Command {
-  resolveRef(tasks: Tasks, state: ResolvingState): Command;
+  resolveRef(tasks: Tasks, context: ResolveContext): Command;
   run(args: string[], context: RunContext): Promise<void>;
 }
 class Single implements Command {
   constructor(public name: string, public args: string[]) {}
-  resolveRef(tasks, { checked }) {
+  resolveRef(tasks, _) {
     return this;
   }
   async run(args, { cwd, resources }) {
@@ -76,19 +77,20 @@ async function kill(p: Process) {
 
 class Ref implements Command {
   constructor(public name: string, public args: string[]) {}
-  resolveRef(tasks, { checked }) {
+  resolveRef(tasks, context) {
     let command = tasks[this.name];
     if (!command) {
       throw new Error(`Task "${this.name}" is not defined.`);
     }
-    if (checked.has(this.name)) {
+    if (context.checked.has(this.name)) {
       throw new Error(`Task "${this.name}" is in a reference loop.`);
     }
     if (command instanceof Single) {
       command = new Single(command.name, command.args.concat(this.args));
     }
     return command.resolveRef(tasks, {
-      checked: new Set(checked).add(this.name)
+      ...context,
+      checked: new Set(context.checked).add(this.name)
     });
   }
   async run(args, options) {
@@ -100,10 +102,10 @@ class Sequence implements Command {
   constructor(commands: Command[]) {
     this.commands = commands;
   }
-  resolveRef(tasks, state) {
+  resolveRef(tasks, context) {
     return new Sequence(
       this.commands.map(c => {
-        return c.resolveRef(tasks, state);
+        return c.resolveRef(tasks, context);
       })
     );
   }
@@ -121,10 +123,10 @@ class Parallel implements Command {
   constructor(commands: Command[]) {
     this.commands = commands;
   }
-  resolveRef(tasks, state) {
+  resolveRef(tasks, context) {
     return new Parallel(
       this.commands.map(c => {
-        return c.resolveRef(tasks, state);
+        return c.resolveRef(tasks, context);
       })
     );
   }
@@ -141,11 +143,14 @@ class SyncWatcher implements Command {
     public watchOptions,
     public command: Command
   ) {}
-  resolveRef(tasks, state) {
+  resolveRef(tasks, context) {
+    if (context.hasWatcher) {
+      throw new Error("Nested watchers not supported.");
+    }
     return new SyncWatcher(
       this.dirs,
       this.watchOptions,
-      this.command.resolveRef(tasks, state)
+      this.command.resolveRef(tasks, { ...context, hasWatcher: true })
     );
   }
   async run(args, context) {
@@ -153,12 +158,6 @@ class SyncWatcher implements Command {
       return path.join(context.cwd, d);
     });
     const childResources = new Set();
-    const closer = {
-      close() {
-        throw new Error("Nested watchers not supported.");
-      }
-    };
-    context.resources.add(closer);
     await this.command
       .run(args, { ...context, resources: childResources })
       .catch(_ => {});
@@ -168,7 +167,6 @@ class SyncWatcher implements Command {
         .run(args, { ...context, resources: childResources })
         .catch(_ => {});
     }
-    context.resources.delete(closer);
   }
 }
 class AsyncWatcher implements Command {
@@ -177,11 +175,14 @@ class AsyncWatcher implements Command {
     public watchOptions: any,
     public command: Command
   ) {}
-  resolveRef(tasks, state) {
+  resolveRef(tasks, context) {
+    if (context.hasWatcher) {
+      throw new Error("Nested watchers not supported.");
+    }
     return new AsyncWatcher(
       this.dirs,
       this.watchOptions,
-      this.command.resolveRef(tasks, state)
+      this.command.resolveRef(tasks, { ...context, hasWatcher: true })
     );
   }
   async run(args, context) {
@@ -301,7 +302,8 @@ export async function run(
   if (!command) {
     throw new Error(`Task "${taskName}" not found.`);
   }
-  await command.resolveRef(tasks, { checked: new Set() }).run(args, context);
+  const resolveContext = { checked: new Set(), hasWatcher: false };
+  await command.resolveRef(tasks, resolveContext).run(args, context);
 }
 
 new Promise(resolve => setTimeout(resolve, 0))

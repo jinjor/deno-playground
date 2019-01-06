@@ -8,4 +8,4 @@ task("start", "echo changed", "$all").watchSync(".");
 
 task("server", "deno server.ts");
 task("dev", "echo restarting...", "$server").watch(".");
-// task("dev1", "$dev").watch(".");
+task("dev1", "$dev").watch(".");
