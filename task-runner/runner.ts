@@ -231,6 +231,9 @@ export class TaskDecorator {
     );
   }
 }
+interface RunOptions {
+  cwd?: string;
+}
 interface RunContext {
   cwd: string;
   resources: Set<Closer>;
@@ -247,12 +250,17 @@ export class TaskRunner {
     this.tasks[name] = makeCommand(rawCommands);
     return new TaskDecorator(this.tasks, name);
   }
-  async run(taskName: string, args: string[], context: RunContext) {
+  async run(taskName: string, args: string[] = [], options: RunOptions = {}) {
+    options = { cwd: ".", ...options };
     let command = this.tasks[taskName];
     if (!command) {
       throw new Error(`Task "${taskName}" not found.`);
     }
     const resolveContext = { checked: new Set(), hasWatcher: false };
+    const context = {
+      cwd: options.cwd,
+      resources: new Set()
+    };
     await command.resolveRef(this.tasks, resolveContext).run(args, context);
   }
 }

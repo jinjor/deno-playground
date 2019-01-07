@@ -14,18 +14,13 @@ export function task(
 new Promise(resolve => setTimeout(resolve, 0))
   .then(async () => {
     const parsedArgs = flags.parse(args);
-    const cwd = parsedArgs.cwd || ".";
+    const cwd = parsedArgs.cwd;
     const taskName = parsedArgs._[1];
     const taskArgs = parsedArgs._.splice(2);
     if (!taskName) {
-      console.log("Usage: task_file.ts task_name [--cwd]");
-      exit(0);
+      throw new Error("Usage: task_file.ts task_name [--cwd]");
     }
-    const context = {
-      cwd,
-      resources: new Set()
-    };
-    await globalRunner.run(taskName, taskArgs, context);
+    await globalRunner.run(taskName, taskArgs, { cwd });
   })
   .catch(e => {
     console.error(e.message);
