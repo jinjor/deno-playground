@@ -13,4 +13,3 @@ install:
 script:
   - deno -v
   - deno test.ts
-  - deno task-runner/example.ts all --cwd=task-runner --allow-run
