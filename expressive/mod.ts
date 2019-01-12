@@ -8,7 +8,7 @@ import {
   Reader,
   Closer
 } from "deno";
-import { getType } from "mime.ts";
+import { lookup } from "https://deno.land/x/std/media_types/mod.ts";
 import { path, http, color } from "package.ts";
 
 type Method = "HEAD" | "OPTIONS" | "GET" | "POST" | "PUT" | "DELETE" | "PATCH";
@@ -203,7 +203,7 @@ class Response {
       return;
     }
     const extname = path.extname(filePath);
-    const contentType = getType(extname.slice(1));
+    const contentType = lookup(extname.slice(1));
     const fileInfo = await stat(filePath);
     if (!fileInfo.isFile()) {
       return;
