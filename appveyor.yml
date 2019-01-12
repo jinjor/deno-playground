@@ -1,0 +1,8 @@
+install:
+  - ps: iex (iwr https://deno.land/x/install/install.ps1)
+
+test_script:
+  - deno -v
+  - deno --allow-run tasks.ts test
+
+build: off
