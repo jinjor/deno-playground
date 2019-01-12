@@ -9,7 +9,7 @@ import {
   Closer
 } from "deno";
 import { lookup } from "https://deno.land/x/std/media_types/mod.ts";
-import { path, http, color } from "package.ts";
+import { path, http, color } from "deps.ts";
 
 type Method = "HEAD" | "OPTIONS" | "GET" | "POST" | "PUT" | "DELETE" | "PATCH";
 type Next = () => Promise<void>;

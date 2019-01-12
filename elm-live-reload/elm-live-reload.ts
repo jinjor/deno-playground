@@ -1,7 +1,7 @@
 #!/usr/bin/env deno --allow-net --allow-run
 
 import { args, run, exit } from "deno";
-import { flags } from "package.ts";
+import { flags } from "deps.ts";
 import { main } from "mod.ts";
 
 const parsedArgs = flags.parse(args);

@@ -1,5 +1,5 @@
 import { run } from "deno";
-import { expressive, path, opn, watch } from "package.ts";
+import { expressive, path, opn, watch } from "deps.ts";
 
 export async function main(
   main: string,
